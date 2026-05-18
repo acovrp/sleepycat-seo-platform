@@ -21,6 +21,9 @@ class BaseAgent:
 
     def _build_system(self, negative_constraints="", positive_examples=""):
         parts = [self.role_description]
+        si = getattr(self, "special_instructions", "")
+        if si:
+            parts.append(f"\nSPECIAL INSTRUCTIONS FOR THIS ARTICLE:\n{si}")
         if positive_examples:
             parts.append(f"\nWHAT WORKED WELL (keep doing this):\n{positive_examples}")
         if negative_constraints:

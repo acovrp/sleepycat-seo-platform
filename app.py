@@ -16,6 +16,23 @@ from google.auth.transport import requests as google_requests
 
 st.set_page_config(page_title="SleepyCat Engine", page_icon="🐈", layout="wide")
 
+# (input $/1M tokens, output $/1M tokens) — May 2026 pricing
+PRICING = {
+    "anthropic/claude-sonnet-4-6": (3.0,   15.0),
+    "anthropic/claude-opus-4-7":   (15.0,  75.0),
+    "gemini/gemini-2.5-flash":     (0.075,  0.30),
+    "gemini/gemini-2.5-pro":       (1.25,  10.0),
+    "gpt-4o":                      (2.50,  10.0),
+    "gpt-4o-mini":                 (0.15,   0.60),
+    "moonshot/moonshot-v1-8k":     (0.8,    2.4),
+    "groq/llama-3.3-70b-versatile":(0.0,    0.0),
+    "groq/llama-3.1-8b-instant":   (0.0,    0.0),
+}
+
+def _calc_cost(litellm_model, in_tok, out_tok):
+    pr = PRICING.get(litellm_model, (2.0, 8.0))
+    return (in_tok * pr[0] + out_tok * pr[1]) / 1_000_000
+
 MODEL_MAP = {
     "Claude Sonnet (Company)": "anthropic/claude-sonnet-4-6",
     "Claude Opus (Company)":   "anthropic/claude-opus-4-7",
@@ -158,28 +175,43 @@ def _inject_keys(model_choice):
     if st.session_state.get("KIMI_KEY"):
         os.environ["MOONSHOT_API_KEY"] = st.session_state["KIMI_KEY"]
 
-def run_pipeline(kw, model_choice, resume=False):
+def run_pipeline(kw, model_choice, resume=False, special_instructions=""):
     from sleepycat_seo_agent import Orchestrator, _is_error
     _inject_keys(model_choice)
 
-    # Load checkpoint if resuming; ignore if keyword doesn't match
     saved_cp = st.session_state.get("pipeline_checkpoint", {})
     cp = saved_cp if (resume and saved_cp.get("keyword") == kw) else {}
-
-    # Working checkpoint — grows as each stage succeeds
     checkpoint = {"keyword": kw, "serp": cp.get("serp"), "brief": cp.get("brief"),
                   "draft": cp.get("draft"), "opt": cp.get("opt"), "failed_at": None}
-
-    def fail(stage, msg):
-        checkpoint["failed_at"] = stage
-        st.session_state["pipeline_checkpoint"] = checkpoint
-        s.update(label=f"❌ {stage.title()} failed — switch key & Resume", state="error")
-        st.error(msg)
 
     litellm_model = MODEL_MAP.get(model_choice, model_choice)
     engine = Orchestrator(model=litellm_model)
 
+    # Inject special instructions into every agent before any call
+    if special_instructions:
+        for agent in [engine.strategist, engine.drafter, engine.seo_editor, engine.humanizer]:
+            agent.special_instructions = special_instructions
+
+    # Token tracking (populated inside the status block below)
+    tok = {"in": 0, "out": 0}
+
     with st.status("Super-Agent Active...", expanded=True) as s:
+        cost_ph = st.empty()
+
+        def _track(context_str, output_str):
+            tok["in"]  += len(context_str) // 4
+            tok["out"] += len(output_str)  // 4
+            disp_cost   = _calc_cost(litellm_model, tok["in"], tok["out"])
+            total_est   = disp_cost * 2
+            is_free     = PRICING.get(litellm_model, (1, 1))[0] == 0.0
+            cost_str    = "FREE (Groq)" if is_free else f"${disp_cost:.5f} display · ~${total_est:.5f} total"
+            cost_ph.caption(f"🔢 ~{tok['in']+tok['out']:,} tokens so far · {cost_str}")
+
+        def fail(stage, msg):
+            checkpoint["failed_at"] = stage
+            st.session_state["pipeline_checkpoint"] = checkpoint
+            s.update(label=f"❌ {stage.title()} failed — switch key & Resume", state="error")
+            st.error(msg)
         # Agent 1 — SERP Spy
         if checkpoint["serp"]:
             serp = checkpoint["serp"]
@@ -199,17 +231,21 @@ def run_pipeline(kw, model_choice, resume=False):
                 st.warning(f"⚠️ SERP scraping returned no live data — proceeding without competitor context.\n\n`{serp[:200]}`")
 
         # Agent 2 — Strategist
+        strat_ctx = f"KW: {kw}\nSERP: {serp}"
         if checkpoint["brief"]:
             st.success(f"⚡ Brief — loaded from checkpoint ({len(checkpoint['brief'].split())} words)")
             brief = checkpoint["brief"]
         else:
             brief = _stream_agent("🐈 **Strategist** writing content brief...",
-                                  engine.strategist.stream_task(f"KW: {kw}\nSERP: {serp}"))
+                                  engine.strategist.stream_task(strat_ctx))
             if _is_error(brief): fail("strategist", brief); return None
             checkpoint["brief"] = brief
             st.success(f"✅ Brief — {len(brief.split())} words")
+        _track(strat_ctx, brief)
 
         # Agent 3 — Drafter
+        import json as _json
+        draft_ctx = f"STRATEGY BRIEF:\n{brief}\n\nPRODUCT DB:\n{_json.dumps(engine.products, indent=1)}"
         if checkpoint["draft"]:
             st.success(f"⚡ Draft — loaded from checkpoint ({len(checkpoint['draft'].split())} words)")
             draft = checkpoint["draft"]
@@ -219,8 +255,10 @@ def run_pipeline(kw, model_choice, resume=False):
             if _is_error(draft): fail("drafter", draft); return None
             checkpoint["draft"] = draft
             st.success(f"✅ Draft — {len(draft.split())} words")
+        _track(draft_ctx, draft)
 
         # Agent 4 — SEO Architect
+        seo_ctx = f"TARGET: {kw}\n\nDRAFT:\n{draft}"
         if checkpoint["opt"]:
             st.success(f"⚡ SEO pass — loaded from checkpoint ({len(checkpoint['opt'].split())} words)")
             opt = checkpoint["opt"]
@@ -230,13 +268,23 @@ def run_pipeline(kw, model_choice, resume=False):
             if _is_error(opt): fail("seo_architect", opt); return None
             checkpoint["opt"] = opt
             st.success(f"✅ SEO pass — {len(opt.split())} words")
+        _track(seo_ctx, opt)
 
-        # Agent 5 — Humanizer (always runs fresh — final quality pass with memory)
+        # Agent 5 — Humanizer + full quality pass
         st.write("✍️ **Senior Editor** final brand polish...")
         final, dur = engine.run(kw, checkpoint=checkpoint)
         if _is_error(final): fail("humanizer", final); return None
+        _track(opt, final)  # account for humanizer pass
 
-        # All done — clear checkpoint
+        # Final cost card
+        disp_cost = _calc_cost(litellm_model, tok["in"], tok["out"])
+        total_cost = disp_cost * 2
+        is_free = PRICING.get(litellm_model, (1, 1))[0] == 0.0
+        if is_free:
+            cost_ph.info(f"🔢 **~{(tok['in']+tok['out'])*2:,} tokens total** (display + quality pass) · **FREE (Groq)**")
+        else:
+            cost_ph.info(f"🔢 **~{(tok['in']+tok['out'])*2:,} tokens total** · **~${total_cost:.4f}** per blog ({model_choice})")
+
         st.session_state.pop("pipeline_checkpoint", None)
         s.update(label=f"✅ Done in {dur}s! ({len(final.split())} words)", state="complete")
         return final
@@ -298,6 +346,11 @@ with t1:
     col1, col2 = st.columns([2, 1])
     with col1:
         kw = st.text_input("Target Keyword", placeholder="How to choose the perfect mattress...")
+        special_instructions = st.text_area(
+            "Special Instructions (optional)",
+            placeholder="e.g. Focus on back pain audience. Mention the Ultima mattress as primary product. Keep tone casual. Add a section about trial period.",
+            height=80,
+        )
         engine_choice = st.selectbox("Engine", models if models else ["No Keys Found"])
         generate_btn = st.button("🚀 Generate Blog Post", type="primary")
 
@@ -334,7 +387,8 @@ with t1:
         if generate_btn and saved_cp.get("failed_at"):
             # Fresh generate clears any existing checkpoint
             st.session_state.pop("pipeline_checkpoint", None)
-        final_content = run_pipeline(run_kw, engine_choice, resume=is_resume)
+        final_content = run_pipeline(run_kw, engine_choice, resume=is_resume,
+                                      special_instructions=special_instructions)
         if final_content:
             vault_file = save_to_vault(run_kw, final_content)
             log_generation(run_kw, st.session_state['user_email'], final_content, vault_file)
