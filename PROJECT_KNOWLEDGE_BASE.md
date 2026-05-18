@@ -1,4 +1,4 @@
-# 🐈 SleepyCat SEO Platform: 360° Knowledge Base (v7.2)
+# 🐈 SleepyCat SEO Platform: 360° Knowledge Base (v7.3)
 
 ## 1. Project Mission
 To transform SleepyCat’s content strategy from "AI-assisted drafting" to a "Data-Driven, Multi-Agent SEO Factory." The platform generates 1000-1500 word AEO-optimized blog posts grounded in real-time competitor data and verified product specs (E-E-A-T).
@@ -9,8 +9,8 @@ To transform SleepyCat’s content strategy from "AI-assisted drafting" to a "Da
 The system uses a sequential hand-off model with a **single API pass** (v7.0+):
 
 1.  **🕵️ The SERP Spy (Agent 1):** Two-pass DDG scrape — competitor domains first, generic fallback second. Domain-deduplicated (1 result per brand). Collects: meta, H1, H2/H3 (×8), 4 paragraphs, bold claims per URL. No LLM API call.
-2.  **🐈 The Brand Strategist (Agent 2):** Produces a structured 6-section brief (Angle, Gaps, Tone, Product Pushes).
-3.  **🧪 The Lab Tester / Drafter (Agent 3):** Writes a 1500-word draft following the Brand Final Formula. (Anti-Jargon enforced).
+2.  **🐈 The Brand Strategist (Agent 2):** Produces a 7-section brief including a `PRODUCT_SLUGS: ["slug-1", ...]` JSON array. Matches product material type to keyword intent (foam keyword → foam products; latex → latex; comparison → both; pillow keyword → no mattresses).
+3.  **🧪 The Lab Tester / Drafter (Agent 3):** Writes a 1500-word draft using only the 3–5 products selected by the Strategist (not the full 69-product DB). Anti-Jargon enforced.
 4.  **🏗️ The SEO Architect (Agent 4):** Optimizes for AEO. Adds 40-50 word bold snippets, comparison tables, and internal links. **Does not shorten.**
 5.  **✍️ The Senior Editor / Humanizer (Agent 5):** Final pass for brand soul. Preserves all AEO/SEO structures.
 
@@ -56,8 +56,10 @@ Each agent's system prompt is defined in `sleepycat_seo_agent.py`. This section 
 - Output: raw competitor structure passed to Strategist
 
 ### Agent 2 — Brand Strategist
-- Produces a **structured strategy brief** with 6 sections: Article Angle, Target Reader, H2 Structure (5-6 headings), Key Product Pushes, Content Gaps, Tone Note
-- Has full brand DNA + product DB in system prompt
+- Produces a **structured strategy brief** with 7 sections: Article Angle, Target Reader, H2 Structure (5-6 headings), Key Product Pushes (1 primary + up to 4 secondary), Content Gaps, Tone Note, **PRODUCT_SLUGS**
+- `PRODUCT_SLUGS: ["slug-1", "slug-2"]` — exact slugs of chosen products, valid JSON array
+- Material-type matching: foam keyword → foam products; latex → latex; comparison → both types; pillow/accessory keyword → no mattresses
+- Receives enriched compact_products: name + slug + category + **material + firmness + best_for** + 150-char summary
 - Temperature: 0.7 (creative angles needed)
 
 ### Agent 3 — Lab Tester / Drafter
@@ -65,7 +67,8 @@ Each agent's system prompt is defined in `sleepycat_seo_agent.py`. This section 
 - Formula: Hook → 4-5 H2 sections → "Why SleepyCat?" section → CTA closing
 - Anti-jargon enforced: no ILD/density/coil count — use feel/materials/support
 - Temperature: 0.4 (factual but natural)
-- Uses only verified specs from sleepycat-products.json (69 products, `products[]` array)
+- Receives only the **3–5 products selected by Strategist** (full specs from sleepycat-products.json) — not all 69. `_select_products(brief)` parses `PRODUCT_SLUGS` and filters the DB. Falls back to compact_products if parsing fails.
+- Groq exception: always gets compact_products (6K TPM hard limit)
 
 ### Agent 4 — SEO Architect
 - **Does NOT shorten the article** — common regression point
@@ -85,6 +88,7 @@ Each agent's system prompt is defined in `sleepycat_seo_agent.py`. This section 
 
 | Version | Date | Change |
 |---------|------|--------|
+| v7.3 | May 2026 | **(Claude) Smart product selection — Strategist picks slugs, Drafter gets only those.** Strategist prompt adds section 7: `PRODUCT_SLUGS: ["slug-1", ...]` — a JSON array of the 3–5 products chosen for this article. Material-type matching enforced in prompt (foam/latex/pillow). `compact_products` enriched with `material`, `firmness`, `best_for` so Strategist has signal beyond name/category. `_select_products(brief)` parses slugs, validates against DB, returns full-spec objects. Fallback to `compact_products` if JSON parse fails or no slugs match — pipeline never breaks. Drafter input drops from ~50K to ~3–5K tokens. Claude Sonnet cost per article: ~₹35 → ~₹5. Company key (10K TPM) now works — no single agent exceeds the limit. |
 | v7.2 | May 2026 | **(Claude) Rate limit auto-retry.** `execute_task()` retries up to 3 attempts on any 429/rate_limit/RESOURCE_EXHAUSTED error. Parses "retry in Xs" from the API error message, sleeps delay+5s (capped at 90s), then retries transparently. Covers Claude TPM limits (personal 30K/min, company 10K/min) and Gemini free-tier daily quota. Pipeline self-recovers without user intervention. |
 | v7.1 | May 2026 | **(Claude) Active-agent highlight + live per-agent token/INR tracking.** `engine.run()` now accepts `progress_callback(agent, status, ctx, out)`. App creates `st.empty()` placeholders per agent: ⏳ waiting → **⚙️ bold** (active) → ✅ done (N words). `_track(ctx, out)` called on each "done" event so token count and INR cost accumulate live. Cost displayed in INR (not USD). Removed the ×2 multiplier — single-pass now, so estimate reflects one real pass. |
 | v7.0 | May 2026 | **(Claude) Single-pass API architecture + SERP domain deduplication.** Display pass no longer calls Claude/Gemini/GPT for agents 2–4 — eliminated the duplicate API calls that caused org rate limit errors (10K/30K TPM). Agents 2–5 show status lines only; `engine.run()` is the sole LLM execution path. Checkpoint now saves only `serp` (brief/draft/opt no longer populated from display pass). SERP: added `seen_domains` set via `urlparse` — prevents 3 results from same brand; Pass 1 max_results 5→8, Pass 2 8→10. |
@@ -121,6 +125,7 @@ These decisions look wrong but are intentional. Do not revert them.
 | SERP uses `seen_domains` (not just `seen_urls`) for deduplication | Without domain-level dedup, Pass 1 competitor filter returned 3 pages from the same brand (e.g. all Springwel) — same domain just different article URLs. `urlparse(url).netloc.replace("www.", "")` ensures 3 different brands. |
 | `engine.run()` accepts `progress_callback(agent, status, ctx, out)` | Callbacks from within a blocking call update `st.empty()` placeholders inside `st.status()` — Streamlit flushes these immediately. Do not remove the callback parameter; it drives both the active-agent highlight and the per-agent token tracking. |
 | `execute_task()` retries up to 3× on rate limit errors with parsed delay | Rate limits return "retry in Xs" in the error body. Parsing this and sleeping prevents unnecessary permanent failures. Cap is 90s to avoid hanging the pipeline for daily-quota errors (Gemini free tier) where retrying is futile after 2 attempts. |
+| `_select_products()` always has a fallback to `compact_products` | If the Strategist hallucinates a slug, produces malformed JSON, or omits the PRODUCT_SLUGS line entirely, `_select_products()` returns compact_products rather than raising an exception. Drafter still runs — just with less detail. Do not remove the fallback. |
 
 ---
 
@@ -165,7 +170,7 @@ Next generation (Orchestrator.run())
 | History storage size | `generation_history.json` stores full article text per entry — will grow large; consider storing 500-char preview + vault filename only |
 | Post-approval feedback | No way to give positive feedback after approving — "Leave a note" option would enable positive memory from approved articles |
 | ~~Live agent stream~~ | ✅ Redesigned in v7.1 — `progress_callback` + `st.empty()` per-agent placeholders with ⏳→⚙️→✅ states. Streaming removed from display pass to fix rate limits. |
-| Drafter cost reduction | Drafter sends full 69-product JSON (202KB ≈ 50K tokens) every run. Biggest cost lever: let Strategist name the 2–3 target products, then pass only those full specs to Drafter (~3K tokens vs 50K). Would drop Claude Sonnet cost from ~₹35 to ~₹5 per article. |
+| ~~Drafter cost reduction~~ | ✅ Shipped in v7.3 — Strategist outputs `PRODUCT_SLUGS`, `_select_products()` filters to 3–5 full-spec products. Drafter input: ~50K → ~3–5K tokens. Claude Sonnet cost: ~₹35 → ~₹5 per article. Company key (10K TPM) now works. |
 
 ---
 
@@ -196,14 +201,15 @@ On success:
 
 **Limitation:** `st.session_state` is per-browser-session. Closing or hard-refreshing the tab loses the checkpoint. File-based persistence not implemented (low priority — the rate-limit auto-retry in v7.2 makes mid-pipeline failures much rarer).
 
-**Tiered context (v6.4):**
-| Agent | Product data | Why |
-|-------|-------------|-----|
-| Strategist | compact (name + slug + category + 200-char summary) | Just picks which products to feature |
-| **Drafter** | **full 69-product JSON (202KB)** | Needs specs, certifications, FAQ data to write accurately |
-| SEO Architect | seo-trim (name + slug + tech tags + certifications + firmness) | Only needs data for comparison table + internal links |
-| Humanizer | none | Editing prose only |
+**Tiered context (v7.3):**
+| Agent | Product data | Tokens (approx) | Why |
+|-------|-------------|-----------------|-----|
+| Strategist | enriched compact (name + slug + category + material + firmness + best_for + 150-char summary) | ~6K | Needs material/use-case fields to pick the right product type |
+| **Drafter** | **3–5 selected full-spec products** (from `_select_products()`) | **~3–5K** | Only the products being featured — full specs, FAQs, certs |
+| SEO Architect | seo-trim (name + slug + tech tags + certifications + firmness) | ~5K | Comparison table + internal links only |
+| Humanizer | none | — | Editing prose only |
+| Drafter (Groq) | compact (6K TPM hard limit) | ~4K | Groq can't handle even selected full specs within rate limit |
 
 ---
 
-*v7.2 Build - May 2026*
+*v7.3 Build - May 2026*
