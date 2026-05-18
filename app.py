@@ -24,8 +24,8 @@ VAULT_PATH = os.path.join(BASE_PATH, "outputs")
 if not os.path.exists(VAULT_PATH):
     os.makedirs(VAULT_PATH)
 
-# --- Real Google OAuth (Strict v5.4) ---
-CLIENT_ID = "487804996561-d6v7lkm2545839ed2atibdkih2vjnp7e.apps.googleusercontent.com"
+# --- Real Google OAuth (Root v5.5) ---
+CLIENT_ID = "160422986634-5gpernee6sn90rtng8uqphrc7rris4t4.apps.googleusercontent.com"
 CLIENT_SECRET = st.secrets.get("GOOGLE_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRET")
 REDIRECT_URI = "https://sleepycat-seo1.streamlit.app"
 
@@ -33,7 +33,7 @@ if 'user_email' not in st.session_state:
     st.session_state['user_email'] = None
 
 def login_ui():
-    st.title("🐈 SleepyCat SEO Engine (v5.4)")
+    st.title("🐈 SleepyCat SEO Engine (v5.5)")
     st.subheader("Enterprise Login Required")
     st.info("Authorized access for @sleepycat.in domains only.")
     
