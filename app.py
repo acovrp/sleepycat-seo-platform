@@ -24,11 +24,31 @@ if not os.path.exists(VAULT_PATH):
 
 # --- Real Google OAuth ---
 CLIENT_ID = "487804996561-d6v7lkm2545839ed2atibdkih2vjnp7e.apps.googleusercontent.com"
-CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET") # Must be in Streamlit Secrets
+CLIENT_SECRET = st.secrets.get("GOOGLE_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRET")
 REDIRECT_URI = "https://sleepycat-seo1.streamlit.app/"
 
 if 'user_email' not in st.session_state:
     st.session_state['user_email'] = None
+
+def get_flow():
+    client_config = {
+        "web": {
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [REDIRECT_URI]
+        }
+    }
+    return Flow.from_client_config(
+        client_config,
+        scopes=[
+            "openid",
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile"
+        ],
+        redirect_uri=REDIRECT_URI
+    )
 
 def login_ui():
     st.title("🐈 SleepyCat SEO Engine")
@@ -39,46 +59,42 @@ def login_ui():
         st.error("Admin: GOOGLE_CLIENT_SECRET is missing from Secrets.")
         return
 
-    # Flow configuration
-    client_config = {
-        "web": {
-            "client_id": CLIENT_ID,
-            "project_id": "sleepycat-seo",
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_secret": CLIENT_SECRET,
-            "redirect_uris": [REDIRECT_URI]
-        }
-    }
+    flow = get_flow()
+    # Force account selection to avoid 403 with personal accounts
+    auth_url, _ = flow.authorization_url(prompt='select_account', access_type='offline')
     
-    flow = Flow.from_client_config(
-        client_config,
-        scopes=["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"],
-        redirect_uri=REDIRECT_URI
-    )
+    st.markdown(f'''
+        <a href="{auth_url}" target="_self" style="text-decoration: none;">
+            <div style="background-color: #4285F4; color: white; padding: 12px 24px; border-radius: 6px; text-align: center; font-weight: bold; font-size: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                🚀 Sign in with SleepyCat Google Account
+            </div>
+        </a>
+    ''', unsafe_allow_html=True)
 
-    auth_url, _ = flow.authorization_url(prompt='consent')
-    
-    st.markdown(f'<a href="{auth_url}" target="_self" style="text-decoration: none;"><div style="background-color: #4285F4; color: white; padding: 10px 20px; border-radius: 5px; text-align: center; font-weight: bold;">🚀 Sign in with SleepyCat Google Account</div></a>', unsafe_allow_html=True)
-
-    # Handle Callback
-    params = st.query_params
-    if "code" in params:
+    # Handle Callback via st.query_params
+    query_params = st.query_params
+    if "code" in query_params:
         try:
-            flow.fetch_token(code=params["code"])
+            flow.fetch_token(code=query_params["code"])
             credentials = flow.credentials
             info = id_token.verify_oauth2_token(credentials.id_token, google_requests.Request(), CLIENT_ID)
             email = info.get('email')
             
+            # Domain check
             if email and (email.endswith("@sleepycat.in") or email == "admin@sleepycat.in"):
                 st.session_state['user_email'] = email
                 st.query_params.clear()
                 st.rerun()
             else:
-                st.error(f"Access Denied: {email} is not a valid @sleepycat.in account.")
+                st.error(f"Access Denied: {email} is not authorized.")
+                if st.button("Try again"):
+                    st.query_params.clear()
+                    st.rerun()
         except Exception as e:
-            st.error(f"Login Error: {e}")
+            st.error(f"Authentication Failed: {e}")
+            if st.button("Reset Login"):
+                st.query_params.clear()
+                st.rerun()
 
 if not st.session_state['user_email']:
     login_ui()
