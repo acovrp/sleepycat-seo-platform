@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 
 # ==========================================
-# SleepyCat SEO Platform (v4.5 - Enterprise)
+# SleepyCat SEO Platform (v4.5.1 - Fixes)
 # Frontend: Google Auth + Company API Default
 # ==========================================
 
@@ -25,7 +25,7 @@ def login_ui():
     st.subheader("Internal Dashboard Login")
     st.info("Click the button below to sign in with your @sleepycat.in account.")
     if st.button("🚀 Sign in with Google"):
-        # Real OAuth Handshake simulation for v4.5
+        # Real OAuth Handshake simulation
         st.session_state['user_email'] = "team@sleepycat.in"
         st.success("Authenticated via Google!")
         st.rerun()
@@ -60,9 +60,9 @@ with st.sidebar:
     
     connected_models = []
     
-    # Logic for model dropdown priority
+    # Logic for model dropdown priority - Using 'latest' as verified safest pointer
     if company_claude:
-        connected_models.append("anthropic/claude-3-5-sonnet-2026 (Company)")
+        connected_models.append("anthropic/claude-3-5-sonnet-latest (Company)")
     
     if gemini_key:
         st.session_state['GEMINI_KEY'] = gemini_key
@@ -70,8 +70,8 @@ with st.sidebar:
         
     if claude_key:
         st.session_state['CLAUDE_KEY'] = claude_key
-        if "anthropic/claude-3-5-sonnet-2026 (Company)" not in connected_models:
-            connected_models.append("anthropic/claude-3-5-sonnet-2026")
+        if "anthropic/claude-3-5-sonnet-latest (Company)" not in connected_models:
+            connected_models.append("anthropic/claude-3-5-sonnet-latest")
             
     if openai_key:
         st.session_state['OPENAI_KEY'] = openai_key
@@ -159,7 +159,7 @@ def update_feedback(gen_id, feedback_text, status):
         with open(HISTORY_PATH, "r") as f:
             history = json.load(f)
         for item in history:
-            if item['id'] == gen_id:
+            if item.get('id') == gen_id:
                 item['feedback'] = feedback_text
                 item['status'] = status
                 break
@@ -217,25 +217,36 @@ with tab2:
             with open(HISTORY_PATH, "r") as f:
                 history = json.load(f)
                 for item in history[::-1]:
-                    with st.expander(f"[{item['timestamp']}] {item['keyword']} (by {item['user']})"):
-                        st.markdown(item['content'])
+                    # Safe get to handle legacy entries
+                    timestamp = item.get('timestamp', 'Unknown Time')
+                    keyword = item.get('keyword', 'Unknown Keyword')
+                    user = item.get('user', 'Unknown User')
+                    item_id = item.get('id')
+                    
+                    with st.expander(f"[{timestamp}] {keyword} (by {user})"):
+                        content = item.get('content', '*Content not archived for this legacy version.*')
+                        st.markdown(content)
                         st.markdown("---")
-                        st.write(f"**Status:** {item['status']}")
-                        if item['feedback']: st.info(f"**Feedback:** {item['feedback']}")
-                        f_col1, f_col2 = st.columns(2)
-                        with f_col1:
-                            if st.button("✅ Accept", key=f"acc_{item['id']}"):
-                                update_feedback(item['id'], "Verified high quality.", "Approved")
-                                st.rerun()
-                        with f_col2:
-                            if st.button("❌ Reject", key=f"rej_{item['id']}"):
-                                st.session_state[f"show_rej_{item['id']}"] = True
-                        if st.session_state.get(f"show_rej_{item['id']}", False):
-                            reason = st.text_area("Why rejection?", key=f"reason_{item['id']}")
-                            if st.button("Submit", key=f"sub_{item['id']}"):
-                                update_feedback(item['id'], reason, "Rejected")
-                                st.rerun()
-        except: st.write("Error loading history.")
+                        st.write(f"**Status:** {item.get('status', 'Legacy')}")
+                        if item.get('feedback'): st.info(f"**Feedback:** {item['feedback']}")
+                        
+                        if item_id:
+                            f_col1, f_col2 = st.columns(2)
+                            with f_col1:
+                                if st.button("✅ Accept", key=f"acc_{item_id}"):
+                                    update_feedback(item_id, "Verified high quality.", "Approved")
+                                    st.rerun()
+                            with f_col2:
+                                if st.button("❌ Reject", key=f"rej_{item_id}"):
+                                    st.session_state[f"show_rej_{item_id}"] = True
+                            if st.session_state.get(f"show_rej_{item_id}", False):
+                                reason = st.text_area("Why rejection?", key=f"reason_{item_id}")
+                                if st.button("Submit", key=f"sub_{item_id}"):
+                                    update_feedback(item_id, reason, "Rejected")
+                                    st.rerun()
+                        else:
+                            st.caption("Feedback unavailable for legacy logs.")
+        except Exception as e: st.error(f"History Load Error: {e}")
     else: st.write("No history found.")
 
 with tab3:
@@ -246,19 +257,21 @@ with tab3:
         st.subheader("🧐 Memory Review Queue")
         if os.path.exists(HISTORY_PATH):
             with open(HISTORY_PATH, "r") as f: history = json.load(f)
-            rejections = [item for item in history if item['status'] == "Rejected"]
+            # Safe status check for memory queue
+            rejections = [item for item in history if item.get('status') == "Rejected"]
             if rejections:
                 for rej in rejections:
                     with st.container(border=True):
-                        st.write(f"**Keyword:** {rej['keyword']} | **Reason:** {rej['feedback']}")
-                        if st.button("🧠 Update Agent Memory", key=f"mem_{rej['id']}"):
+                        st.write(f"**Keyword:** {rej.get('keyword')} | **Reason:** {rej.get('feedback')}")
+                        rej_id = rej.get('id')
+                        if rej_id and st.button("🧠 Update Agent Memory", key=f"mem_{rej_id}"):
                             new_mem = {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"), "feedback": rej['feedback']}
                             mems = []
                             if os.path.exists(MEMORY_PATH):
                                 with open(MEMORY_PATH, "r") as f: mems = json.load(f)
                             mems.append(new_mem)
                             with open(MEMORY_PATH, "w") as f: json.dump(mems, f, indent=2)
-                            update_feedback(rej['id'], rej['feedback'], "Memory Updated")
+                            update_feedback(rej_id, rej['feedback'], "Memory Updated")
                             st.success("Agent patched!")
                             st.rerun()
             else: st.write("No pending memory updates.")
