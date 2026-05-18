@@ -114,7 +114,16 @@ def run_pipeline(kw, model_choice):
         s.update(label=f"Done in {dur}s!", state="complete")
     return final
 
+def is_good_content(content):
+    if not content or len(content) < 400:
+        return False
+    if "Agent " in content and " failed" in content:
+        return False
+    return True
+
 def save_history(kw, content):
+    if not is_good_content(content):
+        return
     hist = []
     try:
         if os.path.exists(HISTORY_PATH):
@@ -147,6 +156,8 @@ with t2:
             with open(HISTORY_PATH, "r") as f:
                 hist = json.load(f)
             for i in hist[::-1]:
+                if not is_good_content(i.get("content", "")):
+                    continue
                 with st.expander(f"{i.get('timestamp')} — {i.get('keyword')}"):
                     st.markdown(i.get("content", ""))
         except:
