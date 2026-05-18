@@ -5,11 +5,42 @@
 
 ---
 
-## How to use this glossary
-- When writing blog content, search this file by tech name first before paraphrasing.
-- Use the exact branded spelling including ™ marks (SleepyCat trademarks these names — incorrect spelling = brand inconsistency).
+## Quick Reference — Start Here
+
+### Hero technologies (use in titles, H1s, product pushes)
+| Tech | Category | Products | Tagline angle |
+|---|---|---|---|
+| Patented SmartCell™ Memory Foam | Mattress | Founder's | "India's 1st patented memory foam" |
+| AirGen™ Memory Foam | Mattress + Topper | 5 products | "Open-cell, breathable, cooler" |
+| CoolTec™ Fabric | Cover + Pillow | 6 products | "Sleeps up to 4-6°C cooler" |
+| Pinhole Tech Latex | Mattress + Topper | 4 products | "Engineered airflow latex" |
+| DeepTouch™ Pressure | Mattress | 2 Ultima models | "7-zone targeted support" |
+| GOLS Certified Natural Latex | Mattress | 4 products | "Certified organic latex" |
+| 5-Zone Body Support | Mattress | Hybrid Latex | "Full-body zone targeting" |
+| Zero Motion Transfer | Mattress | Cloud | "Pocket springs, partner-proof" |
+
+### "Which products have X?" lookup
+- **Cooling tech**: 6 products (CoolTec™ across mattresses, pillows, covers)
+- **GOLS organic latex**: 4 mattresses (Founder's, Cloud, Ultima Natural Latex, Baby Natural Latex)
+- **Open-cell breathable memory foam**: 5 products (AirGen™ across mattresses + toppers)
+- **Pocket springs**: 1 product only (Cloud Mattress)
+- **Patented tech**: 1 product only (SmartCell™ exclusive to Founder's Mattress)
+- **Adjustable / customisable**: 3 products (Cloud Pillow zipper, Hybrid Pillow inserts, Dual Comfort flip)
+- **Back pain / spine**: Hybrid Latex (5-Zone), Ultima models (DeepTouch™ 7-Zone), The Latex Ortho
+
+### Anti-content cautions
+- **SmartCell™ and AirGen™ are NOT the same.** SmartCell is patented and exclusive to Founder's. AirGen is the broader open-cell memory foam used across the line.
+- **"CoolTec" appears on both mattress covers and pillow surfaces** — they are not the same physical material, just the same branded fabric family.
+- **Density (kg/m³) and ILD values appear on only ~5 of 69 product JSONs.** Do NOT cite specific density numbers in published content without manual verification on sleepycat.in.
+- **Use exact branded spelling with ™ marks** — incorrect spelling = brand inconsistency.
+
+---
+
+## How to use the detailed sections below
+- Search by tech name to find which products use it.
+- Use exact branded spelling including ™ marks.
 - "Products using" lists are the canonical cross-reference for comparison content.
-- **Naming variant warning**: some techs appear under multiple spellings (e.g. "AirGen™" vs "AirGen™ Memory Foam"). Treat these as the same technology when writing — the variation is a Firecrawl extraction artefact.
+- **Naming variant warning**: some techs appear under multiple spellings (e.g. "AirGen™" vs "AirGen™ Memory Foam"). Treat as the same technology.
 
 ---
 
@@ -62,7 +93,6 @@ Contouring support that targets specific body parts to maintain a neutral spine 
 ### SoftTouch
 SleepyCat's branded perforated memory foam pillow line.
 - **Products using**: SoftTouch Memory Foam Pillow
-- (Also informs the line name "Contour SoftTouch Memory Foam Pillow")
 
 ### Perforated Memory Foam
 Memory foam with perforation pattern that provides consistent support without sagging.
@@ -209,28 +239,3 @@ Mattress protector cut and elasticated like a fitted sheet — fits mattresses u
 ### Zero Motion Transfer
 Individually encased pocket springs that isolate motion (the partner-disturbance feature).
 - **Products using**: Cloud Mattress *(only spring mattress in the lineup)*
-
----
-
-## SEO Agent — Quick Reference
-
-### Hero technologies for content (use in titles, H1s)
-| Tech | Category | Products | Tagline angle |
-|---|---|---|---|
-| Patented SmartCell™ Memory Foam | Mattress | Founder's | "India's 1st patented memory foam" |
-| AirGen™ Memory Foam | Mattress + Topper | 5 products | "Open-cell, breathable, cooler" |
-| CoolTec™ Fabric | Cover + Pillow | 6 products | "Sleeps up to 4-6°C cooler" |
-| Pinhole Tech Latex | Mattress + Topper | 4 products | "Engineered airflow latex" |
-| DeepTouch™ Pressure | Mattress | 2 Ultima models | "7-zone targeted support" |
-
-### "Which products have X?" lookup
-- **Cooling tech**: 6 products (CoolTec across mattresses, pillows, covers)
-- **GOLS organic latex**: 4 mattresses (Founder's, Cloud, Ultima Natural Latex, Baby Natural Latex)
-- **Open-cell breathable memory foam**: 5 products (AirGen across mattresses + toppers)
-- **Pocket springs**: 1 product only (Cloud Mattress)
-- **Adjustable / customisable**: 3 products (Cloud Pillow zipper, Hybrid Pillow inserts, Dual Comfort flip)
-
-### Anti-content cautions
-- **SmartCell™ and AirGen™ are NOT the same.** SmartCell is patented and exclusive to Founder's. AirGen is the broader open-cell memory foam used across the line.
-- **"CoolTec" appears on both mattress covers and pillow surfaces** — they are not the same physical material, just the same branded fabric family.
-- **Density (kg/m³) and ILD values appear on only ~5 of 69 product JSONs.** Firecrawl may have hallucinated some — do NOT cite specific density numbers in published content without manual verification on sleepycat.in.

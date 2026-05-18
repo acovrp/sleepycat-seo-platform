@@ -110,7 +110,7 @@ REQUIREMENTS:
 - Minimum 1000 words. 2-4 paragraphs per H2.
 - NO FABRICATION. If it's not in the DB, don't write it.
 
-GLOSSARY: {tech_glossary[:1000]}"""
+GLOSSARY: {tech_glossary[:2000]}"""
         super().__init__("Drafter", system, 0.4, model)
 
     def execute_task(self, brief, db, neg="", pos=""):
