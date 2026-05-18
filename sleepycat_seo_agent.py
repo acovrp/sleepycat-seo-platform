@@ -29,7 +29,7 @@ class BaseAgent:
             return response.choices[0].message.content
         except Exception as e:
             print(f"    Error in {self.name}: {e}")
-            return f"Agent {self.name} failed."
+            return f"Agent {self.name} failed: {e}"
 
 
 class SERPScraperAgent:
