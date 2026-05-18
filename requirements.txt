@@ -6,3 +6,6 @@ googlesearch-python
 google-genai
 python-dotenv
 botocore
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
