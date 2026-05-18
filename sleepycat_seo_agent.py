@@ -247,22 +247,24 @@ class Orchestrator:
             return "", ""
         except: return "", ""
 
-    def run(self, keyword):
+    def run(self, keyword, checkpoint=None):
+        """Full quality pass with memory injection. Pass checkpoint to skip completed stages."""
         start = time.time()
         print(f"\n🚀 Pipeline Start: {keyword}")
         positives, negatives = self._load_memory()
+        cp = checkpoint or {}
 
-        serp = self.serp_agent.execute_task(keyword)
+        serp = cp.get("serp") or self.serp_agent.execute_task(keyword)
 
-        brief = self.strategist.execute_task(f"TARGET: {keyword}\nSERP: {serp}", neg=negatives, pos=positives)
+        brief = cp.get("brief") or self.strategist.execute_task(f"TARGET: {keyword}\nSERP: {serp}", neg=negatives, pos=positives)
         if _is_error(brief):
             return brief, round(time.time() - start, 1)
 
-        draft = self.drafter.execute_task(brief, self.products, neg=negatives, pos=positives)
+        draft = cp.get("draft") or self.drafter.execute_task(brief, self.products, neg=negatives, pos=positives)
         if _is_error(draft):
             return draft, round(time.time() - start, 1)
 
-        opt = self.seo_editor.execute_task(draft, keyword, self.seo_products, neg=negatives, pos=positives)
+        opt = cp.get("opt") or self.seo_editor.execute_task(draft, keyword, self.seo_products, neg=negatives, pos=positives)
         if _is_error(opt):
             return opt, round(time.time() - start, 1)
 

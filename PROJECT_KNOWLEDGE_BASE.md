@@ -83,6 +83,8 @@ Each agent's system prompt is defined in `sleepycat_seo_agent.py`. This section 
 
 | Version | Date | Change |
 |---------|------|--------|
+| v6.5 | May 2026 | **(Claude) Live session checkpoint.** Pipeline saves each agent output to `st.session_state["pipeline_checkpoint"]`. On failure: Resume banner appears with stages completed. User switches API key, hits Resume — pipeline continues from the failed stage. `Orchestrator.run()` accepts `checkpoint=` to skip already-completed stages in the quality pass. |
+| v6.4 | May 2026 | **(Claude) Streaming display + tiered context + 180s timeout.** Token-by-token streaming for agents 2–4 via `stream_task()`. Tiered product context: compact for Strategist, full 69-product JSON for Drafter, seo-trim for SEO Architect. Timeout 90s → 180s. Error propagation: pipeline exits early on any failure, shows `st.error()`. Admin Memory Browser replaces broken Rejected queue. |
 | v6.3 | May 2026 | **(Claude) Full audit.** Kimi key injection added (sidebar input + MOONSHOT_API_KEY env var). Unused deps removed (google-genai, python-dotenv, botocore). `claude_suggestions.md` merged into knowledge base. |
 | v6.2 | May 2026 | **(Claude) RLHF Two-Field Memory.** `agent_memory.json` now stores `type: positive/negative`. History tab replaced with two-field feedback form. All 5 agents inject both "WHAT WORKED WELL" and "PAST FEEDBACK TO AVOID". Agent file updated to load `sleepycat-products.json` (69 products). Fixed Claude model names (`claude-sonnet-4-6`). |
 | v6.1.1 | May 2026 | **Unified Aligned Build.** Merged Claude's v5.9 deep-content prompts. Restored Enterprise Cloud Sync, Knowledge Vault, and Admin controls. |
@@ -100,7 +102,7 @@ These decisions look wrong but are intentional. Do not revert them.
 |----------|-----|
 | OAuth uses `st.link_button()`, not `st.markdown` with onclick | Streamlit's DOMPurify strips onclick handlers; `st.link_button()` is the only reliable external navigation |
 | Claude model IDs: `claude-sonnet-4-6` / `claude-opus-4-7` | `claude-3-5-sonnet-latest` and `claude-3-5-sonnet-20241022` return not-found on the company Anthropic account |
-| `app.py` calls agents 1–4 individually, then `engine.run()` re-executes all 5 | Double execution is intentional — individual calls drive UI progress steps; `engine.run()` produces the final output with full memory injection. Extra token cost accepted for quality. |
+| `app.py` calls agents 1–4 individually, then `engine.run()` re-executes all 5 | Double execution is intentional — individual calls drive UI progress steps; `engine.run()` produces the final output with full memory injection. Extra token cost accepted for quality. On checkpoint resume, `engine.run(checkpoint=cp)` uses saved stage outputs so only the Humanizer re-runs. |
 | RLHF memory writes always include `"type": "positive"` or `"type": "negative"` | Typeless entries are silently ignored by `_load_memory()` — they neither help nor harm but waste the memory slot |
 | `sleepycat-products.json` loaded via `raw.get("products", [])` | File is a wrapper dict `{generated_at, products: [...]}`, not a bare array or simple key→value dict |
 | `product_catalog.json` kept in repo | 3-product backup. Not used by main pipeline. Useful for local testing without the full 202KB DB. |
@@ -147,8 +149,46 @@ Next generation (Orchestrator.run())
 | SERP timeout | 4s is tight for slow Indian domains — increase to 6s |
 | History storage size | `generation_history.json` stores full article text per entry — will grow large; consider storing 500-char preview + vault filename only |
 | Post-approval feedback | No way to give positive feedback after approving — "Leave a note" option would enable positive memory from approved articles |
-| Live agent stream | Show token-by-token LLM output per agent during generation (litellm stream=True + st.empty() placeholder) |
+| ~~Live agent stream~~ | ✅ Shipped in v6.4 — `stream_task()` + `st.empty()` rolling preview |
 
 ---
 
-*Unified v6.3 Build - May 2026*
+## 12. Live Session Checkpoint (v6.5)
+
+Allows a failed pipeline to be resumed mid-run after switching API keys, without re-paying for completed agent stages.
+
+```
+run_pipeline() saves each stage to st.session_state["pipeline_checkpoint"]:
+  {
+    "keyword": "best mattress india",
+    "serp":  "...scraped data...",    # ✅ saved after Agent 1
+    "brief": "...strategy brief...",  # ✅ saved after Agent 2
+    "draft": None,                    # ❌ Agent 3 timed out here
+    "opt":   None,
+    "failed_at": "drafter"
+  }
+
+On failure:
+  → Resume banner appears in Generator tab showing completed stages
+  → User switches API key in sidebar
+  → User clicks "▶️ Resume Pipeline"
+  → run_pipeline(resume=True) skips completed stages, streams from failed stage
+  → engine.run(checkpoint=cp) skips Agents 1–4, only runs Humanizer
+
+On success:
+  → st.session_state.pop("pipeline_checkpoint") — checkpoint cleared
+```
+
+**Limitation:** `st.session_state` is per-browser-session. Closing or hard-refreshing the tab loses the checkpoint. File-based persistence not implemented (low priority — failures are rare and the team is co-located on the same session).
+
+**Tiered context (v6.4):**
+| Agent | Product data | Why |
+|-------|-------------|-----|
+| Strategist | compact (name + slug + category + 200-char summary) | Just picks which products to feature |
+| **Drafter** | **full 69-product JSON (202KB)** | Needs specs, certifications, FAQ data to write accurately |
+| SEO Architect | seo-trim (name + slug + tech tags + certifications + firmness) | Only needs data for comparison table + internal links |
+| Humanizer | none | Editing prose only |
+
+---
+
+*Unified v6.5 Build - May 2026*

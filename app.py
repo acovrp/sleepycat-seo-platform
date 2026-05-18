@@ -10,8 +10,8 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 # ==========================================
-# SleepyCat SEO Platform (v6.3)
-# Full audit: Kimi key fix, KB consolidated, all agents verified
+# SleepyCat SEO Platform (v6.5)
+# Live session checkpoint: resume pipeline after any agent failure
 # ==========================================
 
 st.set_page_config(page_title="SleepyCat Engine", page_icon="🐈", layout="wide")
@@ -136,7 +136,7 @@ def save_to_vault(keyword, content):
     return safe_filename
 
 def _stream_agent(label, stream_gen):
-    """Streams an agent generator into a Streamlit expander, returns final text."""
+    """Streams an agent generator, returns final text."""
     st.write(label)
     ph = st.empty()
     text = ""
@@ -146,9 +146,7 @@ def _stream_agent(label, stream_gen):
     ph.empty()
     return text
 
-def run_pipeline(kw, model_choice):
-    from sleepycat_seo_agent import Orchestrator, _is_error
-    # Inject Keys
+def _inject_keys(model_choice):
     if "Company" in model_choice:
         os.environ["ANTHROPIC_API_KEY"] = st.secrets.get("COMPANY_CLAUDE_KEY") or os.environ.get("COMPANY_CLAUDE_KEY", "")
     elif "Claude" in model_choice and st.session_state.get("CLAUDE_KEY"):
@@ -160,47 +158,78 @@ def run_pipeline(kw, model_choice):
     if st.session_state.get("KIMI_KEY"):
         os.environ["MOONSHOT_API_KEY"] = st.session_state["KIMI_KEY"]
 
+def run_pipeline(kw, model_choice, resume=False):
+    from sleepycat_seo_agent import Orchestrator, _is_error
+    _inject_keys(model_choice)
+
+    # Load checkpoint if resuming; ignore if keyword doesn't match
+    saved_cp = st.session_state.get("pipeline_checkpoint", {})
+    cp = saved_cp if (resume and saved_cp.get("keyword") == kw) else {}
+
+    # Working checkpoint — grows as each stage succeeds
+    checkpoint = {"keyword": kw, "serp": cp.get("serp"), "brief": cp.get("brief"),
+                  "draft": cp.get("draft"), "opt": cp.get("opt"), "failed_at": None}
+
+    def fail(stage, msg):
+        checkpoint["failed_at"] = stage
+        st.session_state["pipeline_checkpoint"] = checkpoint
+        s.update(label=f"❌ {stage.title()} failed — switch key & Resume", state="error")
+        st.error(msg)
+
     litellm_model = MODEL_MAP.get(model_choice, model_choice)
     engine = Orchestrator(model=litellm_model)
 
     with st.status("Super-Agent Active...", expanded=True) as s:
-        st.write("🕵️ **SERP Spy** scanning top results...")
-        serp = engine.serp_agent.execute_task(kw)
-        st.success(f"✅ SERP data collected")
+        # Agent 1 — SERP Spy
+        if checkpoint["serp"]:
+            st.success("⚡ SERP — loaded from checkpoint")
+            serp = checkpoint["serp"]
+        else:
+            st.write("🕵️ **SERP Spy** scanning top results...")
+            serp = engine.serp_agent.execute_task(kw)
+            checkpoint["serp"] = serp
+            st.success("✅ SERP data collected")
 
-        brief = _stream_agent(
-            "🐈 **Strategist** writing content brief...",
-            engine.strategist.stream_task(f"KW: {kw}\nSERP: {serp}")
-        )
-        if _is_error(brief):
-            s.update(label="❌ Strategist failed", state="error")
-            st.error(brief); return None
-        st.success(f"✅ Brief — {len(brief.split())} words")
+        # Agent 2 — Strategist
+        if checkpoint["brief"]:
+            st.success(f"⚡ Brief — loaded from checkpoint ({len(checkpoint['brief'].split())} words)")
+            brief = checkpoint["brief"]
+        else:
+            brief = _stream_agent("🐈 **Strategist** writing content brief...",
+                                  engine.strategist.stream_task(f"KW: {kw}\nSERP: {serp}"))
+            if _is_error(brief): fail("strategist", brief); return None
+            checkpoint["brief"] = brief
+            st.success(f"✅ Brief — {len(brief.split())} words")
 
-        draft = _stream_agent(
-            "🧪 **Drafter** writing 1000-1500 word article...",
-            engine.drafter.stream_task(brief, engine.products)
-        )
-        if _is_error(draft):
-            s.update(label="❌ Drafter failed", state="error")
-            st.error(draft); return None
-        st.success(f"✅ Draft — {len(draft.split())} words")
+        # Agent 3 — Drafter
+        if checkpoint["draft"]:
+            st.success(f"⚡ Draft — loaded from checkpoint ({len(checkpoint['draft'].split())} words)")
+            draft = checkpoint["draft"]
+        else:
+            draft = _stream_agent("🧪 **Drafter** writing 1000-1500 word article...",
+                                  engine.drafter.stream_task(brief, engine.products))
+            if _is_error(draft): fail("drafter", draft); return None
+            checkpoint["draft"] = draft
+            st.success(f"✅ Draft — {len(draft.split())} words")
 
-        opt = _stream_agent(
-            "🏗️ **SEO Architect** adding AEO snippet & comparison table...",
-            engine.seo_editor.stream_task(draft, kw, engine.seo_products)
-        )
-        if _is_error(opt):
-            s.update(label="❌ SEO Architect failed", state="error")
-            st.error(opt); return None
-        st.success(f"✅ SEO pass — {len(opt.split())} words")
+        # Agent 4 — SEO Architect
+        if checkpoint["opt"]:
+            st.success(f"⚡ SEO pass — loaded from checkpoint ({len(checkpoint['opt'].split())} words)")
+            opt = checkpoint["opt"]
+        else:
+            opt = _stream_agent("🏗️ **SEO Architect** adding AEO snippet & comparison table...",
+                                engine.seo_editor.stream_task(draft, kw, engine.seo_products))
+            if _is_error(opt): fail("seo_architect", opt); return None
+            checkpoint["opt"] = opt
+            st.success(f"✅ SEO pass — {len(opt.split())} words")
 
+        # Agent 5 — Humanizer (always runs fresh — final quality pass with memory)
         st.write("✍️ **Senior Editor** final brand polish...")
-        final, dur = engine.run(kw)
-        if _is_error(final):
-            s.update(label="❌ Pipeline failed", state="error")
-            st.error(final); return None
+        final, dur = engine.run(kw, checkpoint=checkpoint)
+        if _is_error(final): fail("humanizer", final); return None
 
+        # All done — clear checkpoint
+        st.session_state.pop("pipeline_checkpoint", None)
         s.update(label=f"✅ Done in {dur}s! ({len(final.split())} words)", state="complete")
         return final
 
@@ -253,18 +282,45 @@ with t1:
     with col1:
         kw = st.text_input("Target Keyword", placeholder="How to choose the perfect mattress...")
         engine_choice = st.selectbox("Engine", models if models else ["No Keys Found"])
-        generate_btn = st.button("Generate Blog Post", type="primary")
+        generate_btn = st.button("🚀 Generate Blog Post", type="primary")
+
+        # Resume banner — shown when a previous run failed mid-pipeline
+        saved_cp = st.session_state.get("pipeline_checkpoint", {})
+        resume_btn = False
+        if saved_cp.get("failed_at"):
+            stages_done = [k for k in ("serp", "brief", "draft", "opt") if saved_cp.get(k)]
+            st.warning(
+                f"⚡ **Checkpoint saved** — `{saved_cp['keyword']}` failed at **{saved_cp['failed_at']}** "
+                f"(completed: {', '.join(stages_done) or 'none'}). "
+                f"Switch your API key above, then Resume."
+            )
+            rc1, rc2 = st.columns([3, 1])
+            with rc1:
+                resume_btn = st.button("▶️ Resume Pipeline", type="secondary", use_container_width=True)
+            with rc2:
+                if st.button("✕ Discard", use_container_width=True):
+                    st.session_state.pop("pipeline_checkpoint", None)
+                    st.rerun()
 
     with col2:
         st.subheader("Knowledge Vault")
         st.write(f"📁 **Storage:** {len(os.listdir(VAULT_PATH))} articles archived.")
         st.info("Every generation is backed up to the SleepyCat GitHub Vault.")
 
-    if generate_btn and kw:
-        final_content = run_pipeline(kw, engine_choice)
+    run_kw = kw
+    is_resume = False
+    if resume_btn and saved_cp.get("keyword"):
+        run_kw = saved_cp["keyword"]
+        is_resume = True
+
+    if (generate_btn and kw) or (resume_btn and saved_cp.get("keyword")):
+        if generate_btn and saved_cp.get("failed_at"):
+            # Fresh generate clears any existing checkpoint
+            st.session_state.pop("pipeline_checkpoint", None)
+        final_content = run_pipeline(run_kw, engine_choice, resume=is_resume)
         if final_content:
-            vault_file = save_to_vault(kw, final_content)
-            log_generation(kw, st.session_state['user_email'], final_content, vault_file)
+            vault_file = save_to_vault(run_kw, final_content)
+            log_generation(run_kw, st.session_state['user_email'], final_content, vault_file)
             st.markdown("---")
             st.markdown(final_content)
             st.download_button("Download Markdown", final_content, vault_file)
