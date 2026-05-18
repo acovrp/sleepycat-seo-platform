@@ -83,6 +83,7 @@ Each agent's system prompt is defined in `sleepycat_seo_agent.py`. This section 
 
 | Version | Date | Change |
 |---------|------|--------|
+| v6.6 | May 2026 | **(Claude) Per-agent memory routing + history delete.** Each memory entry gets a `target` field (`all`/`strategist`/`drafter`/`seo_architect`/`humanizer`). Admin can reroute entries in Memory Browser. `_load_memory(agent_name)` filters by target. `Orchestrator.run()` loads separate memory per agent. Admin History Management section with per-entry delete. |
 | v6.5 | May 2026 | **(Claude) Live session checkpoint.** Pipeline saves each agent output to `st.session_state["pipeline_checkpoint"]`. On failure: Resume banner appears with stages completed. User switches API key, hits Resume — pipeline continues from the failed stage. `Orchestrator.run()` accepts `checkpoint=` to skip already-completed stages in the quality pass. |
 | v6.4 | May 2026 | **(Claude) Streaming display + tiered context + 180s timeout.** Token-by-token streaming for agents 2–4 via `stream_task()`. Tiered product context: compact for Strategist, full 69-product JSON for Drafter, seo-trim for SEO Architect. Timeout 90s → 180s. Error propagation: pipeline exits early on any failure, shows `st.error()`. Admin Memory Browser replaces broken Rejected queue. |
 | v6.3 | May 2026 | **(Claude) Full audit.** Kimi key injection added (sidebar input + MOONSHOT_API_KEY env var). Unused deps removed (google-genai, python-dotenv, botocore). `claude_suggestions.md` merged into knowledge base. |

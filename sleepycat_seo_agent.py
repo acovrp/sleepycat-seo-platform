@@ -236,11 +236,14 @@ class Orchestrator:
             with open(path, "r", encoding="utf-8") as f: return json.load(f)
         except: return {}
 
-    def _load_memory(self):
+    def _load_memory(self, agent_name=None):
+        """Returns (positives_str, negatives_str) filtered to entries targeting this agent or 'all'."""
         try:
             p = os.path.join(self.base_path, "agent_memory.json")
             if os.path.exists(p):
                 with open(p, "r") as f: m = json.load(f)
+                if agent_name:
+                    m = [i for i in m if i.get("target", "all") in ("all", agent_name)]
                 pos = "\n".join([f"- {i['feedback']}" for i in m[-6:] if i.get('type') == 'positive'])
                 neg = "\n".join([f"- {i['feedback']}" for i in m[-6:] if i.get('type') == 'negative'])
                 return pos, neg
@@ -248,27 +251,36 @@ class Orchestrator:
         except: return "", ""
 
     def run(self, keyword, checkpoint=None):
-        """Full quality pass with memory injection. Pass checkpoint to skip completed stages."""
+        """Full quality pass with per-agent memory injection. Pass checkpoint to skip completed stages."""
         start = time.time()
         print(f"\n🚀 Pipeline Start: {keyword}")
-        positives, negatives = self._load_memory()
         cp = checkpoint or {}
 
         serp = cp.get("serp") or self.serp_agent.execute_task(keyword)
 
-        brief = cp.get("brief") or self.strategist.execute_task(f"TARGET: {keyword}\nSERP: {serp}", neg=negatives, pos=positives)
-        if _is_error(brief):
-            return brief, round(time.time() - start, 1)
+        if not cp.get("brief"):
+            pos, neg = self._load_memory("strategist")
+            brief = self.strategist.execute_task(f"TARGET: {keyword}\nSERP: {serp}", neg=neg, pos=pos)
+            if _is_error(brief): return brief, round(time.time() - start, 1)
+        else:
+            brief = cp["brief"]
 
-        draft = cp.get("draft") or self.drafter.execute_task(brief, self.products, neg=negatives, pos=positives)
-        if _is_error(draft):
-            return draft, round(time.time() - start, 1)
+        if not cp.get("draft"):
+            pos, neg = self._load_memory("drafter")
+            draft = self.drafter.execute_task(brief, self.products, neg=neg, pos=pos)
+            if _is_error(draft): return draft, round(time.time() - start, 1)
+        else:
+            draft = cp["draft"]
 
-        opt = cp.get("opt") or self.seo_editor.execute_task(draft, keyword, self.seo_products, neg=negatives, pos=positives)
-        if _is_error(opt):
-            return opt, round(time.time() - start, 1)
+        if not cp.get("opt"):
+            pos, neg = self._load_memory("seo_architect")
+            opt = self.seo_editor.execute_task(draft, keyword, self.seo_products, neg=neg, pos=pos)
+            if _is_error(opt): return opt, round(time.time() - start, 1)
+        else:
+            opt = cp["opt"]
 
-        final = self.humanizer.execute_task(opt, negative_constraints=negatives, positive_examples=positives)
+        pos, neg = self._load_memory("humanizer")
+        final = self.humanizer.execute_task(opt, negative_constraints=neg, positive_examples=pos)
 
         dur = round(time.time() - start, 1)
         return final, dur

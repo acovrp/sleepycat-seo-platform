@@ -260,7 +260,15 @@ def update_feedback(gen_id, feedback, status):
                 break
         with open(HISTORY_PATH, "w") as f: json.dump(hist, f, indent=2)
 
-def write_memory(keyword, feedback_text, memory_type):
+ROUTING_OPTIONS = {
+    "all":          "🌐 All Agents",
+    "strategist":   "🐈 Strategist",
+    "drafter":      "🧪 Drafter",
+    "seo_architect":"🏗️ SEO Architect",
+    "humanizer":    "✍️ Humanizer",
+}
+
+def write_memory(keyword, feedback_text, memory_type, target="all"):
     mem = []
     try:
         if os.path.exists(MEMORY_PATH):
@@ -268,6 +276,7 @@ def write_memory(keyword, feedback_text, memory_type):
     except: pass
     mem.append({
         "type": memory_type,
+        "target": target,
         "feedback": feedback_text,
         "keyword": keyword,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -378,41 +387,81 @@ with t3:
                 st.success("Successfully synced all articles to GitHub 100GB Vault!")
             except Exception as e: st.error(f"Sync Failed: {e}")
             
+        # ── Memory Browser ──────────────────────────────────────────
         st.markdown("---")
         st.subheader("🧠 Agent Memory Browser")
+        st.caption("Change routing to limit which agent a memory is injected into. Delete removes it permanently.")
         if os.path.exists(MEMORY_PATH):
             try:
                 with open(MEMORY_PATH, "r") as f: mem_entries = json.load(f)
                 if mem_entries:
-                    pos_entries = [e for e in mem_entries if e.get("type") == "positive"]
-                    neg_entries = [e for e in mem_entries if e.get("type") == "negative"]
+                    pos_entries  = [(i, e) for i, e in enumerate(mem_entries) if e.get("type") == "positive"]
+                    neg_entries  = [(i, e) for i, e in enumerate(mem_entries) if e.get("type") == "negative"]
+                    routing_keys = list(ROUTING_OPTIONS.keys())
                     col_pos, col_neg = st.columns(2)
+
+                    def _mem_card(real_idx, e, key_suffix):
+                        with st.container(border=True):
+                            st.caption(f"{e.get('timestamp')} · {e.get('keyword')}")
+                            st.write(e.get("feedback"))
+                            cur_target = e.get("target", "all")
+                            r1, r2 = st.columns([3, 1])
+                            with r1:
+                                new_target = st.selectbox(
+                                    "Route to", routing_keys,
+                                    index=routing_keys.index(cur_target) if cur_target in routing_keys else 0,
+                                    format_func=lambda x: ROUTING_OPTIONS[x],
+                                    key=f"route_{key_suffix}_{real_idx}"
+                                )
+                                if new_target != cur_target:
+                                    if st.button("💾 Save routing", key=f"save_route_{key_suffix}_{real_idx}"):
+                                        mem_entries[real_idx]["target"] = new_target
+                                        with open(MEMORY_PATH, "w") as f: json.dump(mem_entries, f, indent=2)
+                                        st.rerun()
+                            with r2:
+                                if st.button("🗑️", key=f"del_mem_{key_suffix}_{real_idx}", help="Delete"):
+                                    mem_entries.pop(real_idx)
+                                    with open(MEMORY_PATH, "w") as f: json.dump(mem_entries, f, indent=2)
+                                    st.rerun()
+
                     with col_pos:
                         st.markdown(f"**✅ Positive ({len(pos_entries)})**")
-                        for idx, e in enumerate(reversed(pos_entries)):
-                            with st.container(border=True):
-                                st.caption(f"{e.get('timestamp')} · {e.get('keyword')}")
-                                st.write(e.get("feedback"))
-                                real_idx = len(mem_entries) - 1 - mem_entries[::-1].index(e)
-                                if st.button("🗑️ Delete", key=f"del_mem_{real_idx}"):
-                                    mem_entries.pop(real_idx)
-                                    with open(MEMORY_PATH, "w") as f: json.dump(mem_entries, f, indent=2)
-                                    st.rerun()
+                        for real_idx, e in reversed(pos_entries):
+                            _mem_card(real_idx, e, "p")
                     with col_neg:
                         st.markdown(f"**❌ Negative ({len(neg_entries)})**")
-                        for idx, e in enumerate(reversed(neg_entries)):
-                            with st.container(border=True):
-                                st.caption(f"{e.get('timestamp')} · {e.get('keyword')}")
-                                st.write(e.get("feedback"))
-                                real_idx = len(mem_entries) - 1 - mem_entries[::-1].index(e)
-                                if st.button("🗑️ Delete", key=f"del_mem_n_{real_idx}"):
-                                    mem_entries.pop(real_idx)
-                                    with open(MEMORY_PATH, "w") as f: json.dump(mem_entries, f, indent=2)
-                                    st.rerun()
+                        for real_idx, e in reversed(neg_entries):
+                            _mem_card(real_idx, e, "n")
                 else:
                     st.info("No agent memories yet. Submit feedback from the History tab to build memory.")
             except Exception as e:
                 st.error(f"Memory load error: {e}")
         else:
             st.info("No agent memories yet. Submit feedback from the History tab to build memory.")
+
+        # ── History Management ───────────────────────────────────────
+        st.markdown("---")
+        st.subheader("🗂️ History Management")
+        if os.path.exists(HISTORY_PATH):
+            try:
+                with open(HISTORY_PATH, "r") as f: hist_all = json.load(f)
+                if hist_all:
+                    for entry in reversed(hist_all):
+                        eid = entry.get("id")
+                        h1, h2 = st.columns([6, 1])
+                        with h1:
+                            status_icon = {"Approved": "✅", "Reviewed": "💬", "Pending Review": "⏳"}.get(entry.get("status"), "—")
+                            st.write(f"{status_icon} `{entry.get('timestamp')}` — **{entry.get('keyword')}** · {entry.get('user')}")
+                        with h2:
+                            if st.button("🗑️", key=f"del_hist_{eid}", help="Delete this entry"):
+                                hist_all = [e for e in hist_all if e.get("id") != eid]
+                                with open(HISTORY_PATH, "w") as f: json.dump(hist_all, f, indent=2)
+                                st.rerun()
+                else:
+                    st.info("No history entries.")
+            except Exception as e:
+                st.error(f"History load error: {e}")
+        else:
+            st.info("No history entries yet.")
+
     elif admin_code: st.error("Incorrect code.")
