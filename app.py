@@ -54,8 +54,9 @@ def login_ui():
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
-        "scope": "openid email profile",
+        "scope": "email profile",
         "prompt": "select_account",
+        "hd": "sleepycat.in", # Restrict to corporate domain at Google level
         "access_type": "online"
     }
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
