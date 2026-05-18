@@ -146,13 +146,14 @@ RULES: {rules}
 class Orchestrator:
     def __init__(self, model="gemini/gemini-1.5-flash"):
         self.base_path = os.path.dirname(os.path.abspath(__file__))
-        dna = self._read(os.path.join(self.base_path, "brand_guidelines.txt"))
-        tech = self._read(os.path.join(self.base_path, "sleepycat-tech-glossary.md"))
-        rules = self._read(os.path.join(self.base_path, "humanizer_rules.txt"))
-        raw = self._json(os.path.join(self.base_path, "product_catalog.json"))
+        dna = self._read(os.path.join(self.base_path, "brand_guidelines.txt"))[:2500]
+        tech = self._read(os.path.join(self.base_path, "sleepycat-tech-glossary.md"))[:2000]
+        rules = self._read(os.path.join(self.base_path, "humanizer_rules.txt"))[:1000]
 
-        # Map dictionary to list for agents
-        self.products = [{"name": k, **v} for k, v in raw.items()] if isinstance(raw, dict) else raw
+        # Load FULL database (200KB+)
+        db = self._json(os.path.join(self.base_path, "sleepycat-products.json"))
+        self.products = [p for p in db.get("products", []) if p.get("category") == "Mattresses"]
+
 
         self.serp_agent = SERPScraperAgent()
         self.strategist = BrandStrategistAgent(dna, self.products, tech, model)
