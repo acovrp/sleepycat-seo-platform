@@ -182,13 +182,21 @@ def run_pipeline(kw, model_choice, resume=False):
     with st.status("Super-Agent Active...", expanded=True) as s:
         # Agent 1 — SERP Spy
         if checkpoint["serp"]:
-            st.success("⚡ SERP — loaded from checkpoint")
             serp = checkpoint["serp"]
+            url_count = serp.count("URL:") if serp else 0
+            with st.expander(f"⚡ SERP — loaded from checkpoint ({url_count} page(s))"):
+                st.code(serp, language=None)
         else:
             st.write("🕵️ **SERP Spy** scanning top results...")
             serp = engine.serp_agent.execute_task(kw)
             checkpoint["serp"] = serp
-            st.success("✅ SERP data collected")
+            serp_is_real = serp and "URL:" in serp
+            if serp_is_real:
+                url_count = serp.count("URL:")
+                with st.expander(f"✅ SERP — {url_count} page(s) scraped (click to verify)"):
+                    st.code(serp, language=None)
+            else:
+                st.warning(f"⚠️ SERP scraping returned no live data — proceeding without competitor context.\n\n`{serp[:200]}`")
 
         # Agent 2 — Strategist
         if checkpoint["brief"]:
