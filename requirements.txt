@@ -2,7 +2,7 @@ streamlit
 litellm
 requests
 beautifulsoup4
-googlesearch-python
+ddgs
 google-auth
 google-auth-oauthlib
 google-auth-httplib2

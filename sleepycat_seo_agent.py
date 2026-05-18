@@ -3,7 +3,7 @@ import json
 import requests
 import time
 from bs4 import BeautifulSoup
-from googlesearch import search
+from ddgs import DDGS
 import litellm
 from concurrent.futures import ThreadPoolExecutor
 
@@ -67,29 +67,39 @@ def _is_error(text):
 
 
 class SERPScraperAgent:
-    """Agent 1: Scrapes top 3 Google results with 150-char previews."""
+    """Agent 1: Uses DuckDuckGo for URL discovery, then scrapes H2/H3 headings from each page."""
     def __init__(self):
         self.name = "The SERP Spy"
 
-    def _scrape_url(self, url):
+    def _scrape_headings(self, url):
+        """Best-effort heading extraction from a URL. Returns list or empty list."""
         try:
-            res = requests.get(url, timeout=4, headers={"User-Agent": "Mozilla/5.0"})
-            if res.status_code != 200: return None
+            res = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+            if res.status_code != 200: return []
             soup = BeautifulSoup(res.text, 'html.parser')
-            headings = [h.get_text().strip() for h in soup.find_all(['h2', 'h3'])[:6]]
-            paras = [p.get_text().strip()[:150] for p in soup.find_all('p')[:2] if len(p.get_text().strip()) > 50]
-            return f"URL: {url}\nHeadings: {', '.join(headings)}\nPreview: {' | '.join(paras)}"
+            return [h.get_text().strip() for h in soup.find_all(['h2', 'h3'])[:6] if h.get_text().strip()]
         except:
-            return None
+            return []
 
     def execute_task(self, keyword):
-        print(f"  [Agent: {self.name}] Parallel Scraping...")
+        print(f"  [Agent: {self.name}] Searching via DuckDuckGo...")
         try:
-            urls = list(search(f"{keyword} India", num_results=3))
+            ddg_results = DDGS().text(f"{keyword} India", max_results=3)
+            if not ddg_results:
+                return "No real-time SERP data available."
+
+            urls = [r['href'] for r in ddg_results]
             with ThreadPoolExecutor(max_workers=3) as executor:
-                results = list(executor.map(self._scrape_url, urls))
-            valid = [r for r in results if r]
-            return "\n\n".join(valid) if valid else "No real-time SERP data available."
+                headings_list = list(executor.map(self._scrape_headings, urls))
+
+            output = []
+            for r, headings in zip(ddg_results, headings_list):
+                entry = f"URL: {r['href']}\nTitle: {r['title']}\nPreview: {r['body'][:150]}"
+                if headings:
+                    entry += f"\nHeadings: {', '.join(headings)}"
+                output.append(entry)
+
+            return "\n\n".join(output)
         except Exception as e:
             return f"SERP scraping failed: {e}"
 
