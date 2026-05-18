@@ -135,8 +135,19 @@ def save_to_vault(keyword, content):
         f.write(content)
     return safe_filename
 
+def _stream_agent(label, stream_gen):
+    """Streams an agent generator into a Streamlit expander, returns final text."""
+    st.write(label)
+    ph = st.empty()
+    text = ""
+    for text in stream_gen:
+        preview = text[-500:] if len(text) > 500 else text
+        ph.markdown(f"```\n{preview}\n```\n_{len(text.split())} words_")
+    ph.empty()
+    return text
+
 def run_pipeline(kw, model_choice):
-    from sleepycat_seo_agent import Orchestrator
+    from sleepycat_seo_agent import Orchestrator, _is_error
     # Inject Keys
     if "Company" in model_choice:
         os.environ["ANTHROPIC_API_KEY"] = st.secrets.get("COMPANY_CLAUDE_KEY") or os.environ.get("COMPANY_CLAUDE_KEY", "")
@@ -151,19 +162,46 @@ def run_pipeline(kw, model_choice):
 
     litellm_model = MODEL_MAP.get(model_choice, model_choice)
     engine = Orchestrator(model=litellm_model)
-    
+
     with st.status("Super-Agent Active...", expanded=True) as s:
-        st.write("🕵️ SERP Spy Analyzing...")
+        st.write("🕵️ **SERP Spy** scanning top results...")
         serp = engine.serp_agent.execute_task(kw)
-        st.write("🐈 Strategist Blueprinting...")
-        brief = engine.strategist.execute_task(f"KW: {kw}\nSERP: {serp}")
-        st.write("🧪 Drafting Deep Content (1500 words)...")
-        draft = engine.drafter.execute_task(brief, engine.products)
-        st.write("🏗️ SEO Architecting AEO...")
-        opt = engine.seo_editor.execute_task(draft, kw, engine.products)
-        st.write("✍️ Senior Editor Final Pass...")
+        st.success(f"✅ SERP data collected")
+
+        brief = _stream_agent(
+            "🐈 **Strategist** writing content brief...",
+            engine.strategist.stream_task(f"KW: {kw}\nSERP: {serp}")
+        )
+        if _is_error(brief):
+            s.update(label="❌ Strategist failed", state="error")
+            st.error(brief); return None
+        st.success(f"✅ Brief — {len(brief.split())} words")
+
+        draft = _stream_agent(
+            "🧪 **Drafter** writing 1000-1500 word article...",
+            engine.drafter.stream_task(brief, engine.products)
+        )
+        if _is_error(draft):
+            s.update(label="❌ Drafter failed", state="error")
+            st.error(draft); return None
+        st.success(f"✅ Draft — {len(draft.split())} words")
+
+        opt = _stream_agent(
+            "🏗️ **SEO Architect** adding AEO snippet & comparison table...",
+            engine.seo_editor.stream_task(draft, kw, engine.seo_products)
+        )
+        if _is_error(opt):
+            s.update(label="❌ SEO Architect failed", state="error")
+            st.error(opt); return None
+        st.success(f"✅ SEO pass — {len(opt.split())} words")
+
+        st.write("✍️ **Senior Editor** final brand polish...")
         final, dur = engine.run(kw)
-        s.update(label=f"Done in {dur}s!", state="complete")
+        if _is_error(final):
+            s.update(label="❌ Pipeline failed", state="error")
+            st.error(final); return None
+
+        s.update(label=f"✅ Done in {dur}s! ({len(final.split())} words)", state="complete")
         return final
 
 def log_generation(kw, user, content, filename):
@@ -224,12 +262,12 @@ with t1:
 
     if generate_btn and kw:
         final_content = run_pipeline(kw, engine_choice)
-        vault_file = save_to_vault(kw, final_content)
-        log_generation(kw, st.session_state['user_email'], final_content, vault_file)
-        
-        st.markdown("---")
-        st.markdown(final_content)
-        st.download_button("Download Markdown", final_content, vault_file)
+        if final_content:
+            vault_file = save_to_vault(kw, final_content)
+            log_generation(kw, st.session_state['user_email'], final_content, vault_file)
+            st.markdown("---")
+            st.markdown(final_content)
+            st.download_button("Download Markdown", final_content, vault_file)
 
 with t2:
     st.subheader("Recent Generations")

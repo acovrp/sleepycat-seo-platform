@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # ==========================================
 # SleepyCat True Multi-Agent E-E-A-T System
-# Engine v6.2 (RLHF: Positive + Negative Memory)
+# Engine v6.4 (Streaming, compact_products, error propagation)
 # ==========================================
 
 class BaseAgent:
@@ -19,21 +19,51 @@ class BaseAgent:
         self.temperature = temperature
         self.primary_model = primary_model
 
-    def execute_task(self, prompt_context, negative_constraints="", positive_examples=""):
-        print(f"  [Agent: {self.name}] Started...")
+    def _build_system(self, negative_constraints="", positive_examples=""):
         parts = [self.role_description]
         if positive_examples:
             parts.append(f"\nWHAT WORKED WELL (keep doing this):\n{positive_examples}")
         if negative_constraints:
             parts.append(f"\nPAST FEEDBACK TO AVOID:\n{negative_constraints}")
-        full_system = "\n".join(parts)
+        return "\n".join(parts)
+
+    def execute_task(self, prompt_context, negative_constraints="", positive_examples=""):
+        print(f"  [Agent: {self.name}] Started...")
+        full_system = self._build_system(negative_constraints, positive_examples)
         messages = [{"role": "system", "content": full_system}, {"role": "user", "content": prompt_context}]
         try:
-            response = litellm.completion(model=self.primary_model, messages=messages, temperature=self.temperature, timeout=90)
+            response = litellm.completion(model=self.primary_model, messages=messages, temperature=self.temperature, timeout=180)
             return response.choices[0].message.content
         except Exception as e:
             print(f"    Error in {self.name}: {e}")
             return f"Agent {self.name} failed: {e}"
+
+    def stream_task(self, prompt_context, negative_constraints="", positive_examples=""):
+        """Yields cumulative text as LLM generates, token by token."""
+        print(f"  [Agent: {self.name}] Streaming...")
+        full_system = self._build_system(negative_constraints, positive_examples)
+        messages = [{"role": "system", "content": full_system}, {"role": "user", "content": prompt_context}]
+        try:
+            response = litellm.completion(model=self.primary_model, messages=messages,
+                                          temperature=self.temperature, timeout=180, stream=True)
+            full_text = ""
+            for chunk in response:
+                delta = chunk.choices[0].delta.content or ""
+                if delta:
+                    full_text += delta
+                    yield full_text
+            if not full_text:
+                yield f"Agent {self.name} returned empty response."
+        except Exception as e:
+            yield f"Agent {self.name} failed: {e}"
+
+
+def _is_error(text):
+    """Returns True if the text is an agent failure message, not real content."""
+    if not text:
+        return True
+    t = str(text).strip()
+    return t.startswith("Agent ") and " failed:" in t
 
 
 class SERPScraperAgent:
@@ -90,6 +120,9 @@ RULES:
     def execute_task(self, context, neg="", pos=""):
         return super().execute_task(f"{context}\n\nPRODUCT DB:\n{json.dumps(self.db, indent=1)}", negative_constraints=neg, positive_examples=pos)
 
+    def stream_task(self, context, neg="", pos=""):
+        yield from super().stream_task(f"{context}\n\nPRODUCT DB:\n{json.dumps(self.db, indent=1)}", negative_constraints=neg, positive_examples=pos)
+
 
 class ReviewerPersonaAgent(BaseAgent):
     """Agent 3: Writes the full 1000-1500 word factual draft."""
@@ -116,6 +149,9 @@ GLOSSARY: {tech_glossary[:2000]}"""
     def execute_task(self, brief, db, neg="", pos=""):
         return super().execute_task(f"STRATEGY BRIEF:\n{brief}\n\nPRODUCT DB:\n{json.dumps(db, indent=1)}", negative_constraints=neg, positive_examples=pos)
 
+    def stream_task(self, brief, db, neg="", pos=""):
+        yield from super().stream_task(f"STRATEGY BRIEF:\n{brief}\n\nPRODUCT DB:\n{json.dumps(db, indent=1)}", negative_constraints=neg, positive_examples=pos)
+
 
 class SEOEditorAgent(BaseAgent):
     """Agent 4: Optimizes for AEO snippets without shortening content."""
@@ -133,6 +169,9 @@ Final output must be 1000+ words."""
 
     def execute_task(self, draft, keyword, db, neg="", pos=""):
         return super().execute_task(f"TARGET: {keyword}\n\nPRODUCT DB:\n{json.dumps(db, indent=1)}\n\nDRAFT:\n{draft}", negative_constraints=neg, positive_examples=pos)
+
+    def stream_task(self, draft, keyword, db, neg="", pos=""):
+        yield from super().stream_task(f"TARGET: {keyword}\n\nPRODUCT DB:\n{json.dumps(db, indent=1)}\n\nDRAFT:\n{draft}", negative_constraints=neg, positive_examples=pos)
 
 
 class HumanizerAgent(BaseAgent):
@@ -156,8 +195,33 @@ class Orchestrator:
         raw = self._json(os.path.join(self.base_path, "sleepycat-products.json"))
         self.products = raw.get("products", []) if isinstance(raw, dict) else raw
 
+        # Compact: just enough for Strategist to select the right products
+        self.compact_products = [
+            {
+                "name": p.get("product_name", ""),
+                "slug": p.get("slug", ""),
+                "category": p.get("category", ""),
+                "summary": (p.get("description_short") or p.get("description", ""))[:200],
+            }
+            for p in self.products
+        ]
+
+        # SEO trim: enough for comparison table + internal links, not full specs
+        self.seo_products = [
+            {
+                "name": p.get("product_name", ""),
+                "slug": p.get("slug", ""),
+                "category": p.get("category", ""),
+                "technologies": p.get("technologies", p.get("key_technologies", [])),
+                "certifications": p.get("certifications", []),
+                "firmness": p.get("firmness", ""),
+                "best_for": p.get("best_for", ""),
+            }
+            for p in self.products
+        ]
+
         self.serp_agent = SERPScraperAgent()
-        self.strategist = BrandStrategistAgent(dna, self.products, tech, model)
+        self.strategist = BrandStrategistAgent(dna, self.compact_products, tech, model)
         self.drafter = ReviewerPersonaAgent(dna, tech, model)
         self.seo_editor = SEOEditorAgent(model)
         self.humanizer = HumanizerAgent(rules, model)
@@ -188,11 +252,21 @@ class Orchestrator:
         print(f"\n🚀 Pipeline Start: {keyword}")
         positives, negatives = self._load_memory()
 
-        serp   = self.serp_agent.execute_task(keyword)
-        brief  = self.strategist.execute_task(f"TARGET: {keyword}\nSERP: {serp}", neg=negatives, pos=positives)
-        draft  = self.drafter.execute_task(brief, self.products, neg=negatives, pos=positives)
-        opt    = self.seo_editor.execute_task(draft, keyword, self.products, neg=negatives, pos=positives)
-        final  = self.humanizer.execute_task(opt, negative_constraints=negatives, positive_examples=positives)
+        serp = self.serp_agent.execute_task(keyword)
+
+        brief = self.strategist.execute_task(f"TARGET: {keyword}\nSERP: {serp}", neg=negatives, pos=positives)
+        if _is_error(brief):
+            return brief, round(time.time() - start, 1)
+
+        draft = self.drafter.execute_task(brief, self.products, neg=negatives, pos=positives)
+        if _is_error(draft):
+            return draft, round(time.time() - start, 1)
+
+        opt = self.seo_editor.execute_task(draft, keyword, self.seo_products, neg=negatives, pos=positives)
+        if _is_error(opt):
+            return opt, round(time.time() - start, 1)
+
+        final = self.humanizer.execute_task(opt, negative_constraints=negatives, positive_examples=positives)
 
         dur = round(time.time() - start, 1)
         return final, dur
