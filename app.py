@@ -1,14 +1,36 @@
 import streamlit as st
 import os
-import json
-from datetime import datetime
+import sys
 
-# ==========================================
-# SleepyCat SEO Platform (v3.0 - Hosted)
-# Frontend: Streamlit with Cloud-Path Fixes
-# ==========================================
-
+# MUST BE THE FIRST STREAMLIT COMMAND
 st.set_page_config(page_title="SleepyCat SEO Engine", page_icon="🐈", layout="wide")
+
+# ==========================================
+# DIAGNOSTICS BLOCK (Fixes Cloud Hangs)
+# ==========================================
+if 'debug' not in st.session_state:
+    st.session_state['debug'] = True
+
+if st.session_state['debug']:
+    with st.expander("🛠️ System Diagnostics (Debug Mode)", expanded=False):
+        st.write(f"Python: {sys.version}")
+        st.write(f"CWD: {os.getcwd()}")
+        st.write(f"Files: {os.listdir('.')}")
+        try:
+            import litellm
+            st.write("LiteLLM: ✅")
+        except Exception as e:
+            st.error(f"LiteLLM Fail: {e}")
+        
+        try:
+            from sleepycat_seo_agent import Orchestrator
+            st.write("Orchestrator: ✅")
+        except Exception as e:
+            st.error(f"Orchestrator Fail: {e}")
+
+# ==========================================
+# Main UI Continues...
+# ==========================================
 
 # Force Absolute Path Resolution for Cloud
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
