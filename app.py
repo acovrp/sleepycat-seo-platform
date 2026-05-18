@@ -66,12 +66,20 @@ with st.sidebar:
     if claude_key:
         st.session_state['CLAUDE_KEY'] = claude_key
         st.info("Claude: Connected ✅")
-        connected_models.extend(["anthropic/claude-3-5-sonnet", "anthropic/claude-3-5-sonnet-latest", "anthropic/claude-3-opus-20240229"])
+        connected_models.extend(["claude-3-5-sonnet-20240620", "claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-haiku-20240307"])
         
     if openai_key:
         st.session_state['OPENAI_KEY'] = openai_key
         st.success("OpenAI: Connected ✅")
-        connected_models.append("openai/gpt-4o")
+        connected_models.append("gpt-4o")
+
+    st.markdown("---")
+    
+    # Manual Override
+    st.subheader("⚙️ Advanced")
+    custom_model = st.text_input("Manual Model ID (Override)", placeholder="e.g., anthropic/claude-3-5-sonnet")
+    if custom_model:
+        connected_models.insert(0, custom_model)
 
     st.markdown("---")
     
