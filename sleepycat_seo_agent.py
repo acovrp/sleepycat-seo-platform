@@ -295,10 +295,15 @@ class Orchestrator:
             for p in self.products
         ]
 
-        # Groq free tier is capped at ~6K TPM — full 69-product JSON (~51K tokens) exceeds it.
-        # Use compact products for Drafter on Groq; full products on all paid providers.
+        # Groq free tier: 6K TPM hard limit. Draft alone is ~2500 tokens, leaving ~3K for product data.
+        # Drafter: compact (~3K tokens) on Groq, full 202KB on paid providers.
+        # SEO Architect: name+slug only (~700 tokens) on Groq — enough for internal links + table.
         self.is_groq = model.startswith("groq/")
         self.drafter_products = self.compact_products if self.is_groq else self.products
+        self.seo_arch_products = (
+            [{"name": p.get("product_name", ""), "slug": p.get("slug", "")} for p in self.products]
+            if self.is_groq else self.seo_products
+        )
 
         self.serp_agent = SERPScraperAgent()
         self.strategist = BrandStrategistAgent(dna, self.compact_products, tech, model)
@@ -354,7 +359,7 @@ class Orchestrator:
 
         if not cp.get("opt"):
             pos, neg = self._load_memory("seo_architect")
-            opt = self.seo_editor.execute_task(draft, keyword, self.seo_products, neg=neg, pos=pos)
+            opt = self.seo_editor.execute_task(draft, keyword, self.seo_arch_products, neg=neg, pos=pos)
             if _is_error(opt): return opt, round(time.time() - start, 1)
         else:
             opt = cp["opt"]

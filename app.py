@@ -277,7 +277,7 @@ def run_pipeline(kw, model_choice, resume=False, special_instructions=""):
             opt = checkpoint["opt"]
         else:
             opt = _stream_agent("🏗️ **SEO Architect** adding AEO snippet & comparison table...",
-                                engine.seo_editor.stream_task(draft, kw, engine.seo_products))
+                                engine.seo_editor.stream_task(draft, kw, engine.seo_arch_products))
             if _is_error(opt): fail("seo_architect", opt); return None
             checkpoint["opt"] = opt
             st.success(f"✅ SEO pass — {len(opt.split())} words")
