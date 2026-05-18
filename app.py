@@ -53,7 +53,7 @@ def login_ui():
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
     st.markdown(f'''
-        <a href="{auth_url}" target="_self" style="text-decoration: none;">
+        <a href="{auth_url}" target="_top" style="text-decoration: none;">
             <div style="background-color: #4285F4; color: white; padding: 15px 30px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 18px; cursor: pointer; border: 1px solid #357ae8;">
                 🚀 Sign in with SleepyCat Google Account
             </div>
