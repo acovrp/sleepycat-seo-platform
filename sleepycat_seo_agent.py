@@ -6,10 +6,11 @@ from bs4 import BeautifulSoup
 from ddgs import DDGS
 import litellm
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlparse
 
 # ==========================================
 # SleepyCat True Multi-Agent E-E-A-T System
-# Engine v6.7 (SERP→ddgs, stream fallback, SEO Architect temp fix)
+# Engine v6.9 (domain dedup, single-pass API calls)
 # ==========================================
 
 class BaseAgent:
@@ -130,22 +131,30 @@ class SERPScraperAgent:
     def execute_task(self, keyword):
         print(f"  [Agent: {self.name}] Two-pass DDG search...")
         collected = []
+        seen_domains = set()
 
-        # Pass 1: competitor blog targeting
+        def _domain(url):
+            return urlparse(url).netloc.replace("www.", "")
+
+        # Pass 1: competitor blog targeting — 1 result per brand
         site_filter = " OR ".join(f"site:{d}" for d in COMPETITOR_DOMAINS)
-        p1_results = self._ddg_search(f"{keyword} ({site_filter})", max_results=5)
+        p1_results = self._ddg_search(f"{keyword} ({site_filter})", max_results=8)
         for r in p1_results:
-            if not self._is_junk(r['href']) and len(collected) < 3:
+            d = _domain(r['href'])
+            if not self._is_junk(r['href']) and d not in seen_domains and len(collected) < 3:
                 collected.append(r)
+                seen_domains.add(d)
 
         # Pass 2: generic fallback — fill up to 3 if pass 1 came up short
         if len(collected) < 3:
-            p2_results = self._ddg_search(f"{keyword} India mattress", max_results=8)
-            seen = {r['href'] for r in collected}
+            p2_results = self._ddg_search(f"{keyword} India mattress", max_results=10)
+            seen_urls = {r['href'] for r in collected}
             for r in p2_results:
-                if not self._is_junk(r['href']) and r['href'] not in seen and len(collected) < 3:
+                d = _domain(r['href'])
+                if not self._is_junk(r['href']) and r['href'] not in seen_urls and d not in seen_domains and len(collected) < 3:
                     collected.append(r)
-                    seen.add(r['href'])
+                    seen_domains.add(d)
+                    seen_urls.add(r['href'])
 
         if not collected:
             return "No real-time SERP data available."
