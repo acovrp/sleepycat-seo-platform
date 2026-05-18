@@ -41,9 +41,16 @@ def login_ui():
     }
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
 
-    if st.button("🚀 Sign in with Google", type="primary", use_container_width=True):
-        # components.html runs in its own iframe; window.top navigates the full browser window
-        components.html(f'<script>window.top.location.href="{auth_url}";</script>', height=0)
+    # Button lives inside components.html iframe — onclick fires with live user gesture,
+    # satisfying allow-top-navigation-by-user-activation sandbox requirement.
+    components.html(f'''
+        <button onclick="window.open('{auth_url}','_top')"
+                style="background:#4285F4;color:white;padding:15px 30px;border:none;
+                       border-radius:8px;font-size:18px;font-weight:bold;cursor:pointer;
+                       width:100%;font-family:sans-serif;">
+            🚀 Sign in with SleepyCat Google Account
+        </button>
+    ''', height=60)
 
     # OAuth callback handler
     qp = st.query_params
