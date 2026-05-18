@@ -323,19 +323,40 @@ with t3:
             except Exception as e: st.error(f"Sync Failed: {e}")
             
         st.markdown("---")
-        st.subheader("🧐 Memory Review Queue")
-        if os.path.exists(HISTORY_PATH):
-            with open(HISTORY_PATH, "r") as f: hist = json.load(f)
-            rejections = [i for i in hist if i.get('status') == "Rejected"]
-            if rejections:
-                for r in rejections:
-                    with st.container(border=True):
-                        st.write(f"**Keyword:** {r.get('keyword')} | **Reason:** {r.get('feedback')}")
-                        rid = r.get('id')
-                        if rid and st.button("🧠 Update Agent Memory", key=f"mem_{rid}"):
-                            write_memory(r.get('keyword', ''), r['feedback'], "negative")
-                            update_feedback(rid, r['feedback'], "Memory Updated")
-                            st.success("Agent brain updated!")
-                            st.rerun()
-            else: st.write("No pending memory updates.")
+        st.subheader("🧠 Agent Memory Browser")
+        if os.path.exists(MEMORY_PATH):
+            try:
+                with open(MEMORY_PATH, "r") as f: mem_entries = json.load(f)
+                if mem_entries:
+                    pos_entries = [e for e in mem_entries if e.get("type") == "positive"]
+                    neg_entries = [e for e in mem_entries if e.get("type") == "negative"]
+                    col_pos, col_neg = st.columns(2)
+                    with col_pos:
+                        st.markdown(f"**✅ Positive ({len(pos_entries)})**")
+                        for idx, e in enumerate(reversed(pos_entries)):
+                            with st.container(border=True):
+                                st.caption(f"{e.get('timestamp')} · {e.get('keyword')}")
+                                st.write(e.get("feedback"))
+                                real_idx = len(mem_entries) - 1 - mem_entries[::-1].index(e)
+                                if st.button("🗑️ Delete", key=f"del_mem_{real_idx}"):
+                                    mem_entries.pop(real_idx)
+                                    with open(MEMORY_PATH, "w") as f: json.dump(mem_entries, f, indent=2)
+                                    st.rerun()
+                    with col_neg:
+                        st.markdown(f"**❌ Negative ({len(neg_entries)})**")
+                        for idx, e in enumerate(reversed(neg_entries)):
+                            with st.container(border=True):
+                                st.caption(f"{e.get('timestamp')} · {e.get('keyword')}")
+                                st.write(e.get("feedback"))
+                                real_idx = len(mem_entries) - 1 - mem_entries[::-1].index(e)
+                                if st.button("🗑️ Delete", key=f"del_mem_n_{real_idx}"):
+                                    mem_entries.pop(real_idx)
+                                    with open(MEMORY_PATH, "w") as f: json.dump(mem_entries, f, indent=2)
+                                    st.rerun()
+                else:
+                    st.info("No agent memories yet. Submit feedback from the History tab to build memory.")
+            except Exception as e:
+                st.error(f"Memory load error: {e}")
+        else:
+            st.info("No agent memories yet. Submit feedback from the History tab to build memory.")
     elif admin_code: st.error("Incorrect code.")
