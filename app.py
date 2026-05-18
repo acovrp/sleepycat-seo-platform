@@ -10,8 +10,8 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 # ==========================================
-# SleepyCat SEO Platform (v6.1 - SUPER AGENT)
-# Merged: Deep Content + Enterprise Controls
+# SleepyCat SEO Platform (v6.3)
+# Full audit: Kimi key fix, KB consolidated, all agents verified
 # ==========================================
 
 st.set_page_config(page_title="SleepyCat Engine", page_icon="🐈", layout="wide")
@@ -105,6 +105,7 @@ with st.sidebar:
     g_key   = st.text_input("Gemini",  type="password", value=st.session_state.get("GEMINI_KEY", ""))
     c_key   = st.text_input("Claude",  type="password", value=st.session_state.get("CLAUDE_KEY", ""))
     oai_key = st.text_input("OpenAI",  type="password", value=st.session_state.get("OPENAI_KEY", ""))
+    k_key   = st.text_input("Kimi",    type="password", value=st.session_state.get("KIMI_KEY", ""))
 
     models = []
     if comp_k: models.extend(["Claude Sonnet (Company)", "Claude Opus (Company)"])
@@ -117,6 +118,9 @@ with st.sidebar:
     if oai_key:
         st.session_state["OPENAI_KEY"] = oai_key
         models.extend(["GPT-4o", "GPT-4o Mini"])
+    if k_key:
+        st.session_state["KIMI_KEY"] = k_key
+        models.append("Kimi 8K")
 
     if st.button("Logout"):
         st.session_state["user_email"] = None
@@ -142,6 +146,8 @@ def run_pipeline(kw, model_choice):
         os.environ["GEMINI_API_KEY"] = st.session_state["GEMINI_KEY"]
     if st.session_state.get("OPENAI_KEY"):
         os.environ["OPENAI_API_KEY"] = st.session_state["OPENAI_KEY"]
+    if st.session_state.get("KIMI_KEY"):
+        os.environ["MOONSHOT_API_KEY"] = st.session_state["KIMI_KEY"]
 
     litellm_model = MODEL_MAP.get(model_choice, model_choice)
     engine = Orchestrator(model=litellm_model)
