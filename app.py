@@ -11,8 +11,10 @@ from google.auth.transport import requests as google_requests
 st.set_page_config(page_title="SleepyCat Engine", page_icon="🐈", layout="wide")
 
 MODEL_MAP = {
-    "Claude Sonnet (Company)": "anthropic/claude-3-5-sonnet-20241022",
-    "Claude Sonnet":           "anthropic/claude-3-5-sonnet-20241022",
+    "Claude Sonnet (Company)": "claude-sonnet-4-6",
+    "Claude Opus (Company)":   "claude-opus-4-7",
+    "Claude Sonnet":           "claude-sonnet-4-6",
+    "Claude Opus":             "claude-opus-4-7",
     "Gemini Flash":            "gemini/gemini-2.5-flash",
     "Gemini Pro":              "gemini/gemini-2.5-pro",
     "GPT-4o":                  "gpt-4o",
@@ -98,13 +100,13 @@ with st.sidebar:
     kimi_key= st.text_input("Kimi",    type="password", value=st.session_state.get("KIMI_KEY", ""))
 
     models = []
-    if comp_k: models.append("Claude Sonnet (Company)")
+    if comp_k: models.extend(["Claude Sonnet (Company)", "Claude Opus (Company)"])
     if g_key:
         st.session_state["GEMINI_KEY"] = g_key
         models.extend(["Gemini Flash", "Gemini Pro"])
     if c_key:
         st.session_state["CLAUDE_KEY"] = c_key
-        models.append("Claude Sonnet")
+        models.extend(["Claude Sonnet", "Claude Opus"])
     if oai_key:
         st.session_state["OPENAI_KEY"] = oai_key
         models.extend(["GPT-4o", "GPT-4o Mini"])
