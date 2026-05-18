@@ -27,11 +27,14 @@ PRICING = {
     "moonshot/moonshot-v1-8k":     (0.8,    2.4),
     "groq/llama-3.3-70b-versatile":(0.0,    0.0),
     "groq/llama-3.1-8b-instant":   (0.0,    0.0),
+    "groq/mixtral-8x7b-32768":     (0.0,    0.0),
 }
+USD_TO_INR = 84  # update periodically
 
 def _calc_cost(litellm_model, in_tok, out_tok):
     pr = PRICING.get(litellm_model, (2.0, 8.0))
-    return (in_tok * pr[0] + out_tok * pr[1]) / 1_000_000
+    usd = (in_tok * pr[0] + out_tok * pr[1]) / 1_000_000
+    return usd * USD_TO_INR  # returns INR
 
 MODEL_MAP = {
     "Claude Sonnet (Company)": "anthropic/claude-sonnet-4-6",
@@ -43,6 +46,9 @@ MODEL_MAP = {
     "GPT-4o":                  "gpt-4o",
     "GPT-4o Mini":             "gpt-4o-mini",
     "Kimi 8K":                 "moonshot/moonshot-v1-8k",
+    "Groq Llama 70B (Free)":  "groq/llama-3.3-70b-versatile",
+    "Groq Llama 8B (Free)":   "groq/llama-3.1-8b-instant",
+    "Groq Mixtral (Free)":    "groq/mixtral-8x7b-32768",
 }
 
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
@@ -123,6 +129,7 @@ with st.sidebar:
     c_key   = st.text_input("Claude",  type="password", value=st.session_state.get("CLAUDE_KEY", ""))
     oai_key = st.text_input("OpenAI",  type="password", value=st.session_state.get("OPENAI_KEY", ""))
     k_key   = st.text_input("Kimi",    type="password", value=st.session_state.get("KIMI_KEY", ""))
+    gr_key  = st.text_input("Groq 🆓", type="password", value=st.session_state.get("GROQ_KEY", ""))
 
     models = []
     if comp_k: models.extend(["Claude Sonnet (Company)", "Claude Opus (Company)"])
@@ -138,6 +145,9 @@ with st.sidebar:
     if k_key:
         st.session_state["KIMI_KEY"] = k_key
         models.append("Kimi 8K")
+    if gr_key:
+        st.session_state["GROQ_KEY"] = gr_key
+        models.extend(["Groq Llama 70B (Free)", "Groq Llama 8B (Free)", "Groq Mixtral (Free)"])
 
     if st.button("Logout"):
         st.session_state["user_email"] = None
@@ -174,6 +184,9 @@ def _inject_keys(model_choice):
         os.environ["OPENAI_API_KEY"] = st.session_state["OPENAI_KEY"]
     if st.session_state.get("KIMI_KEY"):
         os.environ["MOONSHOT_API_KEY"] = st.session_state["KIMI_KEY"]
+    groq_k = st.session_state.get("GROQ_KEY") or st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY", "")
+    if groq_k:
+        os.environ["GROQ_API_KEY"] = groq_k
 
 def run_pipeline(kw, model_choice, resume=False, special_instructions=""):
     from sleepycat_seo_agent import Orchestrator, _is_error
@@ -201,10 +214,10 @@ def run_pipeline(kw, model_choice, resume=False, special_instructions=""):
         def _track(context_str, output_str):
             tok["in"]  += len(context_str) // 4
             tok["out"] += len(output_str)  // 4
-            disp_cost   = _calc_cost(litellm_model, tok["in"], tok["out"])
-            total_est   = disp_cost * 2
+            disp_inr    = _calc_cost(litellm_model, tok["in"], tok["out"])
+            total_inr   = disp_inr * 2
             is_free     = PRICING.get(litellm_model, (1, 1))[0] == 0.0
-            cost_str    = "FREE (Groq)" if is_free else f"${disp_cost:.5f} display · ~${total_est:.5f} total"
+            cost_str    = "FREE (Groq)" if is_free else f"₹{disp_inr:.3f} display · ~₹{total_inr:.3f} total"
             cost_ph.caption(f"🔢 ~{tok['in']+tok['out']:,} tokens so far · {cost_str}")
 
         def fail(stage, msg):
@@ -277,13 +290,12 @@ def run_pipeline(kw, model_choice, resume=False, special_instructions=""):
         _track(opt, final)  # account for humanizer pass
 
         # Final cost card
-        disp_cost = _calc_cost(litellm_model, tok["in"], tok["out"])
-        total_cost = disp_cost * 2
-        is_free = PRICING.get(litellm_model, (1, 1))[0] == 0.0
+        total_inr  = _calc_cost(litellm_model, tok["in"], tok["out"]) * 2
+        is_free    = PRICING.get(litellm_model, (1, 1))[0] == 0.0
         if is_free:
-            cost_ph.info(f"🔢 **~{(tok['in']+tok['out'])*2:,} tokens total** (display + quality pass) · **FREE (Groq)**")
+            cost_ph.info(f"🔢 **~{(tok['in']+tok['out'])*2:,} tokens total** · **FREE (Groq)** 🎉")
         else:
-            cost_ph.info(f"🔢 **~{(tok['in']+tok['out'])*2:,} tokens total** · **~${total_cost:.4f}** per blog ({model_choice})")
+            cost_ph.info(f"🔢 **~{(tok['in']+tok['out'])*2:,} tokens total** · **~₹{total_inr:.2f}** per blog ({model_choice})")
 
         st.session_state.pop("pipeline_checkpoint", None)
         s.update(label=f"✅ Done in {dur}s! ({len(final.split())} words)", state="complete")
@@ -348,8 +360,8 @@ with t1:
         kw = st.text_input("Target Keyword", placeholder="How to choose the perfect mattress...")
         special_instructions = st.text_area(
             "Special Instructions (optional)",
-            placeholder="e.g. Focus on back pain audience. Mention the Ultima mattress as primary product. Keep tone casual. Add a section about trial period.",
-            height=80,
+            placeholder="Examples:\n• Primary product: Ultima Natural Latex. Audience: back pain sufferers.\n• Festive sale angle — mention 30% off. Add comparison with Wakefit.\n• Tone: casual and witty. No medical claims.",
+            height=90,
         )
         engine_choice = st.selectbox("Engine", models if models else ["No Keys Found"])
         generate_btn = st.button("🚀 Generate Blog Post", type="primary")
