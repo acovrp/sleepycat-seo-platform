@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # ==========================================
 # SleepyCat True Multi-Agent E-E-A-T System
-# Engine v6.4 (Streaming, compact_products, error propagation)
+# Engine v6.7 (SERP→ddgs, stream fallback, SEO Architect temp fix)
 # ==========================================
 
 class BaseAgent:
@@ -39,7 +39,7 @@ class BaseAgent:
             return f"Agent {self.name} failed: {e}"
 
     def stream_task(self, prompt_context, negative_constraints="", positive_examples=""):
-        """Yields cumulative text as LLM generates, token by token."""
+        """Yields cumulative text as LLM generates. Falls back to non-streaming on Gemini repetition loops."""
         print(f"  [Agent: {self.name}] Streaming...")
         full_system = self._build_system(negative_constraints, positive_examples)
         messages = [{"role": "system", "content": full_system}, {"role": "user", "content": prompt_context}]
@@ -55,7 +55,19 @@ class BaseAgent:
             if not full_text:
                 yield f"Agent {self.name} returned empty response."
         except Exception as e:
-            yield f"Agent {self.name} failed: {e}"
+            err = str(e)
+            if "repeating the same chunk" in err or "MidStreamFallback" in err:
+                # Gemini repetition loop — retry non-streaming at slightly higher temperature
+                print(f"  [{self.name}] Repetition loop detected — retrying without streaming...")
+                try:
+                    fallback_temp = min(self.temperature + 0.2, 0.7)
+                    response = litellm.completion(model=self.primary_model, messages=messages,
+                                                  temperature=fallback_temp, timeout=180)
+                    yield response.choices[0].message.content
+                except Exception as e2:
+                    yield f"Agent {self.name} failed: {e2}"
+            else:
+                yield f"Agent {self.name} failed: {e}"
 
 
 def _is_error(text):
@@ -175,7 +187,7 @@ TASKS:
 4. SEMANTIC SEARCH: Weave in 'spinal alignment', 'breathability', 'pressure relief'.
 
 Final output must be 1000+ words."""
-        super().__init__("SEO Architect", system, 0.1, model)
+        super().__init__("SEO Architect", system, 0.3, model)
 
     def execute_task(self, draft, keyword, db, neg="", pos=""):
         return super().execute_task(f"TARGET: {keyword}\n\nPRODUCT DB:\n{json.dumps(db, indent=1)}\n\nDRAFT:\n{draft}", negative_constraints=neg, positive_examples=pos)
