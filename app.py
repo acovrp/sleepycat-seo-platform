@@ -30,71 +30,80 @@ REDIRECT_URI = "https://sleepycat-seo1.streamlit.app/"
 if 'user_email' not in st.session_state:
     st.session_state['user_email'] = None
 
-def get_flow():
-    client_config = {
-        "web": {
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": [REDIRECT_URI]
-        }
-    }
-    return Flow.from_client_config(
-        client_config,
-        scopes=[
-            "openid",
-            "https://www.googleapis.com/auth/userinfo.email",
-            "https://www.googleapis.com/auth/userinfo.profile"
-        ],
-        redirect_uri=REDIRECT_URI
-    )
+import urllib.parse
+
+# --- Real Google OAuth (Strict v5.2) ---
+CLIENT_ID = "487804996561-d6v7lkm2545839ed2atibdkih2vjnp7e.apps.googleusercontent.com"
+CLIENT_SECRET = st.secrets.get("GOOGLE_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRET")
+REDIRECT_URI = "https://sleepycat-seo1.streamlit.app" # No trailing slash
+
+if 'user_email' not in st.session_state:
+    st.session_state['user_email'] = None
 
 def login_ui():
-    st.title("🐈 SleepyCat SEO Engine (v5.1)")
+    st.title("🐈 SleepyCat SEO Engine (v5.2)")
     st.subheader("Enterprise Login Required")
     st.info("Authorized access for @sleepycat.in domains only.")
     
     if not CLIENT_SECRET:
-        st.error("Admin: GOOGLE_CLIENT_SECRET is missing from Secrets.")
+        st.error("⚠️ GOOGLE_CLIENT_SECRET is missing from Streamlit Secrets.")
         return
 
-    flow = get_flow()
-    # Force account selection to avoid 403 with personal accounts
-    auth_url, _ = flow.authorization_url(prompt='select_account', access_type='offline')
+    # Manual Auth URL Construction for 100% control
+    params = {
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "prompt": "select_account",
+        "access_type": "online"
+    }
+    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
     st.markdown(f'''
         <a href="{auth_url}" target="_self" style="text-decoration: none;">
-            <div style="background-color: #4285F4; color: white; padding: 12px 24px; border-radius: 6px; text-align: center; font-weight: bold; font-size: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+            <div style="background-color: #4285F4; color: white; padding: 12px 24px; border-radius: 6px; text-align: center; font-weight: bold; font-size: 16px; cursor: pointer;">
                 🚀 Sign in with SleepyCat Google Account
             </div>
         </a>
     ''', unsafe_allow_html=True)
 
+    with st.expander("🛠️ Debug Connection"):
+        st.write(f"**Redirect URI:** `{REDIRECT_URI}`")
+        st.write(f"**Client ID:** `{CLIENT_ID}`")
+        if st.checkbox("Show Raw Auth Link"):
+            st.code(auth_url)
+
     # Handle Callback via st.query_params
     query_params = st.query_params
     if "code" in query_params:
         try:
-            flow.fetch_token(code=query_params["code"])
-            credentials = flow.credentials
-            info = id_token.verify_oauth2_token(credentials.id_token, google_requests.Request(), CLIENT_ID)
-            email = info.get('email')
+            # Exchange code for token manually to ensure consistency
+            token_url = "https://oauth2.googleapis.com/token"
+            data = {
+                "code": query_params["code"],
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "redirect_uri": REDIRECT_URI,
+                "grant_type": "authorization_code"
+            }
+            res = requests.post(token_url, data=data)
+            tokens = res.json()
             
-            # Domain check
-            if email and (email.endswith("@sleepycat.in") or email == "admin@sleepycat.in"):
-                st.session_state['user_email'] = email
-                st.query_params.clear()
-                st.rerun()
-            else:
-                st.error(f"Access Denied: {email} is not authorized.")
-                if st.button("Try again"):
+            if "id_token" in tokens:
+                info = id_token.verify_oauth2_token(tokens["id_token"], google_requests.Request(), CLIENT_ID)
+                email = info.get('email')
+                
+                if email and (email.endswith("@sleepycat.in") or email == "admin@sleepycat.in"):
+                    st.session_state['user_email'] = email
                     st.query_params.clear()
                     st.rerun()
+                else:
+                    st.error(f"Access Denied: {email} is not authorized.")
+            else:
+                st.error(f"Token Exchange Failed: {tokens.get('error_description', tokens.get('error', 'Unknown Error'))}")
         except Exception as e:
-            st.error(f"Authentication Failed: {e}")
-            if st.button("Reset Login"):
-                st.query_params.clear()
-                st.rerun()
+            st.error(f"Auth System Error: {e}")
 
 if not st.session_state['user_email']:
     login_ui()
