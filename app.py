@@ -59,19 +59,43 @@ with st.sidebar:
     if gemini_key:
         st.session_state['GEMINI_KEY'] = gemini_key
         st.success("Gemini: Connected ✅")
-        connected_models.extend(["gemini/gemini-1.5-flash", "gemini/gemini-1.5-pro"])
+        connected_models.extend(["gemini/gemini-1.5-flash", "gemini/gemini-1.5-pro", "gemini/gemini-2.0-flash-exp"])
     else:
         st.warning("Gemini: Disconnected ❌")
         
     if claude_key:
         st.session_state['CLAUDE_KEY'] = claude_key
         st.info("Claude: Connected ✅")
-        connected_models.append("anthropic/claude-3-5-sonnet-20240620")
+        connected_models.extend(["anthropic/claude-3-5-sonnet", "anthropic/claude-3-5-sonnet-latest", "anthropic/claude-3-opus-20240229"])
         
     if openai_key:
         st.session_state['OPENAI_KEY'] = openai_key
         st.success("OpenAI: Connected ✅")
         connected_models.append("openai/gpt-4o")
+
+    st.markdown("---")
+    
+    # API Test Button
+    if connected_models:
+        st.subheader("🛠️ Connection Test")
+        test_model = st.selectbox("Test with Model", connected_models, key="test_model_select")
+        if st.button("Run Connection Test"):
+            try:
+                import litellm
+                # Inject keys for test
+                if st.session_state.get('GEMINI_KEY'): os.environ['GEMINI_API_KEY'] = st.session_state['GEMINI_KEY']
+                if st.session_state.get('CLAUDE_KEY'): os.environ['ANTHROPIC_API_KEY'] = st.session_state['CLAUDE_KEY']
+                if st.session_state.get('OPENAI_KEY'): os.environ['OPENAI_API_KEY'] = st.session_state['OPENAI_KEY']
+                
+                with st.spinner(f"Testing {test_model}..."):
+                    response = litellm.completion(
+                        model=test_model,
+                        messages=[{"role": "user", "content": "Hello"}],
+                        max_tokens=5
+                    )
+                    st.success(f"Success! Model responded: '{response.choices[0].message.content}'")
+            except Exception as e:
+                st.error(f"Test Failed: {e}")
 
     st.markdown("---")
     if st.button("Logout"):
