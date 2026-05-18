@@ -137,7 +137,7 @@ def get_orchestrator(model):
         st.error(f"Engine Load Failed: {e}")
         return None
 
-def log_generation(keyword, user):
+def log_generation(keyword, user, content):
     history = []
     try:
         if os.path.exists(HISTORY_PATH):
@@ -145,15 +145,31 @@ def log_generation(keyword, user):
                 history = json.load(f)
         
         history.append({
+            "id": len(history) + 1,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "user": user,
-            "keyword": keyword
+            "keyword": keyword,
+            "content": content,
+            "feedback": None,
+            "status": "Pending Review"
         })
         
         with open(HISTORY_PATH, "w") as f:
             json.dump(history, f, indent=2)
     except:
         pass
+
+def update_feedback(gen_id, feedback_text, status):
+    if os.path.exists(HISTORY_PATH):
+        with open(HISTORY_PATH, "r") as f:
+            history = json.load(f)
+        for item in history:
+            if item['id'] == gen_id:
+                item['feedback'] = feedback_text
+                item['status'] = status
+                break
+        with open(HISTORY_PATH, "w") as f:
+            json.dump(history, f, indent=2)
 
 tab1, tab2, tab3 = st.tabs(["🚀 Generator", "📜 History", "🛠️ Admin"])
 
@@ -199,7 +215,7 @@ with tab1:
                         st.write("✍️ Editor: Final human pass...")
                         final_content = orchestrator.humanizer.execute_task(optimized_draft, feedback_mem)
                         
-                        log_generation(keyword, st.session_state['user_email'])
+                        log_generation(keyword, st.session_state['user_email'], final_content)
                         status.update(label="Generation Complete!", state="complete", expanded=False)
                         
                         st.markdown("---")
@@ -214,7 +230,31 @@ with tab2:
         try:
             with open(HISTORY_PATH, "r") as f:
                 history = json.load(f)
-                st.table(history[::-1]) # Newest first
+                for item in history[::-1]: # Newest first
+                    with st.expander(f"[{item['timestamp']}] {item['keyword']} (by {item['user']})"):
+                        st.markdown(item['content'])
+                        st.markdown("---")
+                        st.write(f"**Current Status:** {item['status']}")
+                        if item['feedback']:
+                            st.info(f"**User Feedback:** {item['feedback']}")
+                        
+                        # Feedback Widget
+                        f_col1, f_col2 = st.columns(2)
+                        with f_col1:
+                            if st.button("✅ Accept", key=f"acc_{item['id']}"):
+                                update_feedback(item['id'], "Verified high quality.", "Approved")
+                                st.rerun()
+                        with f_col2:
+                            reject = st.button("❌ Reject", key=f"rej_{item['id']}")
+                            if reject:
+                                st.session_state[f"show_rej_{item['id']}"] = True
+                        
+                        if st.session_state.get(f"show_rej_{item['id']}", False):
+                            reason = st.text_area("Why is this being rejected?", key=f"reason_{item['id']}")
+                            if st.button("Submit Rejection", key=f"sub_{item['id']}"):
+                                update_feedback(item['id'], reason, "Rejected")
+                                st.session_state[f"show_rej_{item['id']}"] = False
+                                st.rerun()
         except:
             st.write("Error loading history.")
     else:
@@ -225,6 +265,43 @@ with tab3:
     admin_code = st.text_input("Admin Passcode", type="password", key="admin_tab_code")
     if admin_code == "SleepyCat2026":
         st.success("Admin mode unlocked.")
+        
+        # Admin Review Queue
+        st.markdown("---")
+        st.subheader("🧐 Memory Review Queue")
+        st.caption("Review rejected outputs and update the agent's long-term memory.")
+        
+        if os.path.exists(HISTORY_PATH):
+            with open(HISTORY_PATH, "r") as f:
+                history = json.load(f)
+            
+            rejections = [item for item in history if item['status'] == "Rejected"]
+            if rejections:
+                for rej in rejections:
+                    with st.container(border=True):
+                        st.write(f"**Keyword:** {rej['keyword']}")
+                        st.write(f"**Rejected by:** {rej['user']}")
+                        st.error(f"**Reason:** {rej['feedback']}")
+                        if st.button("🧠 Update Agent Memory", key=f"mem_{rej['id']}"):
+                            # Move to agent_memory.json
+                            new_mem_entry = {
+                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                "feedback": rej['feedback']
+                            }
+                            mems = []
+                            if os.path.exists(MEMORY_PATH):
+                                with open(MEMORY_PATH, "r") as f: mems = json.load(f)
+                            mems.append(new_mem_entry)
+                            with open(MEMORY_PATH, "w") as f: json.dump(mems, f, indent=2)
+                            
+                            # Mark as 'Memory Updated' in history
+                            update_feedback(rej['id'], rej['feedback'], "Memory Updated")
+                            st.success("Agent memory updated! This mistake will not be repeated.")
+                            st.rerun()
+            else:
+                st.write("No pending memory updates.")
+
+        st.markdown("---")
         # Logic to edit guidelines
         guideline_path = os.path.join(BASE_PATH, "brand_guidelines.txt")
         if os.path.exists(guideline_path):
@@ -236,11 +313,5 @@ with tab3:
                     f.write(new_dna)
                 st.success("Brand DNA updated!")
         
-        st.markdown("---")
-        st.subheader("Global Memory (RLHF)")
-        if os.path.exists(MEMORY_PATH):
-            with open(MEMORY_PATH, "r") as f:
-                mems = json.load(f)
-                st.write(mems)
     elif admin_code:
         st.error("Incorrect Admin Code.")
