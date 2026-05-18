@@ -10,6 +10,17 @@ from google.auth.transport import requests as google_requests
 
 st.set_page_config(page_title="SleepyCat Engine", page_icon="🐈", layout="wide")
 
+MODEL_MAP = {
+    "Claude Sonnet (Company)": "anthropic/claude-3-5-sonnet-20241022",
+    "Claude Sonnet":           "anthropic/claude-3-5-sonnet-20241022",
+    "Gemini Flash":            "gemini/gemini-2.5-flash",
+    "Gemini Pro":              "gemini/gemini-2.5-pro",
+    "GPT-4o":                  "gpt-4o",
+    "GPT-4o Mini":             "gpt-4o-mini",
+    "Kimi 8K":                 "moonshot/moonshot-v1-8k",
+    "Kimi 128K":               "moonshot/moonshot-v1-128k",
+}
+
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 HISTORY_PATH = os.path.join(BASE_PATH, "generation_history.json")
 VAULT_PATH = os.path.join(BASE_PATH, "outputs")
@@ -87,19 +98,19 @@ with st.sidebar:
     kimi_key= st.text_input("Kimi",    type="password", value=st.session_state.get("KIMI_KEY", ""))
 
     models = []
-    if comp_k: models.append("anthropic/claude-3-5-sonnet-20241022 (Company)")
+    if comp_k: models.append("Claude Sonnet (Company)")
     if g_key:
         st.session_state["GEMINI_KEY"] = g_key
-        models.extend(["gemini/gemini-2.5-flash", "gemini/gemini-2.5-pro"])
+        models.extend(["Gemini Flash", "Gemini Pro"])
     if c_key:
         st.session_state["CLAUDE_KEY"] = c_key
-        models.append("anthropic/claude-3-5-sonnet-20241022")
+        models.append("Claude Sonnet")
     if oai_key:
         st.session_state["OPENAI_KEY"] = oai_key
-        models.extend(["gpt-4o", "gpt-4o-mini"])
+        models.extend(["GPT-4o", "GPT-4o Mini"])
     if kimi_key:
         st.session_state["KIMI_KEY"] = kimi_key
-        models.extend(["moonshot/moonshot-v1-8k", "moonshot/moonshot-v1-128k"])
+        models.extend(["Kimi 8K", "Kimi 128K"])
 
     if st.button("Logout"):
         st.session_state["user_email"] = None
@@ -108,9 +119,9 @@ with st.sidebar:
 # --- Pipeline ---
 def run_pipeline(kw, model_choice):
     from sleepycat_seo_agent import Orchestrator
-    if "(Company)" in model_choice:
+    if "Company" in model_choice:
         os.environ["ANTHROPIC_API_KEY"] = st.secrets.get("COMPANY_CLAUDE_KEY") or os.environ.get("COMPANY_CLAUDE_KEY", "")
-    elif st.session_state.get("CLAUDE_KEY"):
+    elif "Claude" in model_choice and st.session_state.get("CLAUDE_KEY"):
         os.environ["ANTHROPIC_API_KEY"] = st.session_state["CLAUDE_KEY"]
     if st.session_state.get("GEMINI_KEY"):
         os.environ["GEMINI_API_KEY"] = st.session_state["GEMINI_KEY"]
@@ -119,7 +130,8 @@ def run_pipeline(kw, model_choice):
     if st.session_state.get("KIMI_KEY"):
         os.environ["MOONSHOT_API_KEY"] = st.session_state["KIMI_KEY"]
 
-    engine = Orchestrator(model=model_choice.split(" (")[0])
+    litellm_model = MODEL_MAP.get(model_choice, model_choice)
+    engine = Orchestrator(model=litellm_model)
     with st.status("Engine running...", expanded=True) as s:
         st.write("🕵️ SERP analysis → brand strategy → draft → SEO edit → humanize...")
         final, dur = engine.run(kw)
