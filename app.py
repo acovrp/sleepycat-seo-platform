@@ -51,7 +51,7 @@ def get_flow():
     )
 
 def login_ui():
-    st.title("🐈 SleepyCat SEO Engine")
+    st.title("🐈 SleepyCat SEO Engine (v5.1)")
     st.subheader("Enterprise Login Required")
     st.info("Authorized access for @sleepycat.in domains only.")
     
