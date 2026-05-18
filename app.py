@@ -3,13 +3,14 @@ import os
 import json
 import subprocess
 import urllib.parse
+import requests
 from datetime import datetime
-from google_auth_oauthlib.flow import Flow
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 # ==========================================
-# SleepyCat SEO Platform (v5.3 - HARD REFRESH)
+# SleepyCat SEO Platform (v5.4 - TOTAL FORCE)
+# Deployment Time: 2026-05-18 19:15 UTC
 # ==========================================
 
 st.set_page_config(page_title="SleepyCat SEO Engine", page_icon="🐈", layout="wide")
@@ -23,26 +24,16 @@ VAULT_PATH = os.path.join(BASE_PATH, "outputs")
 if not os.path.exists(VAULT_PATH):
     os.makedirs(VAULT_PATH)
 
-# --- Real Google OAuth ---
+# --- Real Google OAuth (Strict v5.4) ---
 CLIENT_ID = "487804996561-d6v7lkm2545839ed2atibdkih2vjnp7e.apps.googleusercontent.com"
 CLIENT_SECRET = st.secrets.get("GOOGLE_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRET")
-REDIRECT_URI = "https://sleepycat-seo1.streamlit.app/"
-
-if 'user_email' not in st.session_state:
-    st.session_state['user_email'] = None
-
-import urllib.parse
-
-# --- Real Google OAuth (Strict v5.2) ---
-CLIENT_ID = "487804996561-d6v7lkm2545839ed2atibdkih2vjnp7e.apps.googleusercontent.com"
-CLIENT_SECRET = st.secrets.get("GOOGLE_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRET")
-REDIRECT_URI = "https://sleepycat-seo1.streamlit.app" # No trailing slash
+REDIRECT_URI = "https://sleepycat-seo1.streamlit.app"
 
 if 'user_email' not in st.session_state:
     st.session_state['user_email'] = None
 
 def login_ui():
-    st.title("🐈 SleepyCat SEO Engine (v5.2)")
+    st.title("🐈 SleepyCat SEO Engine (v5.4)")
     st.subheader("Enterprise Login Required")
     st.info("Authorized access for @sleepycat.in domains only.")
     
@@ -50,37 +41,34 @@ def login_ui():
         st.error("⚠️ GOOGLE_CLIENT_SECRET is missing from Streamlit Secrets.")
         return
 
-    # Manual Auth URL Construction for 100% control
+    # Manual Auth URL Construction
     params = {
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
         "scope": "email profile",
         "prompt": "select_account",
-        "hd": "sleepycat.in", # Restrict to corporate domain at Google level
+        "hd": "sleepycat.in",
         "access_type": "online"
     }
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
     st.markdown(f'''
         <a href="{auth_url}" target="_self" style="text-decoration: none;">
-            <div style="background-color: #4285F4; color: white; padding: 12px 24px; border-radius: 6px; text-align: center; font-weight: bold; font-size: 16px; cursor: pointer;">
+            <div style="background-color: #4285F4; color: white; padding: 15px 30px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 18px; cursor: pointer; border: 1px solid #357ae8;">
                 🚀 Sign in with SleepyCat Google Account
             </div>
         </a>
     ''', unsafe_allow_html=True)
 
-    with st.expander("🛠️ Debug Connection"):
-        st.write(f"**Redirect URI:** `{REDIRECT_URI}`")
-        st.write(f"**Client ID:** `{CLIENT_ID}`")
-        if st.checkbox("Show Raw Auth Link"):
-            st.code(auth_url)
+    st.markdown("---")
+    st.caption("Build Verification: **v5.4-STRICT-OAUTH**")
+    st.caption(f"Server Time: {datetime.now().strftime('%H:%M:%S UTC')}")
 
-    # Handle Callback via st.query_params
+    # Handle Callback
     query_params = st.query_params
     if "code" in query_params:
         try:
-            # Exchange code for token manually to ensure consistency
             token_url = "https://oauth2.googleapis.com/token"
             data = {
                 "code": query_params["code"],
@@ -103,7 +91,7 @@ def login_ui():
                 else:
                     st.error(f"Access Denied: {email} is not authorized.")
             else:
-                st.error(f"Token Exchange Failed: {tokens.get('error_description', tokens.get('error', 'Unknown Error'))}")
+                st.error(f"Token Exchange Failed: {tokens.get('error_description', 'Check Google Cloud settings.')}")
         except Exception as e:
             st.error(f"Auth System Error: {e}")
 
@@ -119,7 +107,6 @@ with st.sidebar:
     st.markdown("---")
     st.header("🔌 API Connection")
     
-    # Company Key Status
     company_claude = os.environ.get("COMPANY_CLAUDE_KEY")
     if company_claude:
         st.success("Claude (Company Mode): Active ✅")
@@ -145,7 +132,7 @@ with st.sidebar:
         st.session_state['user_email'] = None
         st.rerun()
 
-# --- Main Functions ---
+# --- Main App Logic ---
 def save_to_vault(keyword, content):
     filename = f"{datetime.now().strftime('%Y%m%d')}_{keyword.replace(' ', '_')}.md"
     safe_filename = "".join([c for c in filename if c.isalnum() or c in ('_', '.')]).rstrip()
@@ -161,7 +148,6 @@ def get_orchestrator(model):
             os.environ['ANTHROPIC_API_KEY'] = os.environ.get("COMPANY_CLAUDE_KEY", "")
         elif st.session_state.get('CLAUDE_KEY'):
             os.environ['ANTHROPIC_API_KEY'] = st.session_state['CLAUDE_KEY']
-        
         if st.session_state.get('GEMINI_KEY'):
             os.environ['GEMINI_API_KEY'] = st.session_state['GEMINI_KEY']
             
@@ -175,8 +161,7 @@ def log_generation(keyword, user, content, filename):
     history = []
     try:
         if os.path.exists(HISTORY_PATH):
-            with open(HISTORY_PATH, "r") as f:
-                history = json.load(f)
+            with open(HISTORY_PATH, "r") as f: history = json.load(f)
         history.append({
             "id": len(history) + 1,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -186,8 +171,7 @@ def log_generation(keyword, user, content, filename):
             "filename": filename,
             "status": "Pending Review"
         })
-        with open(HISTORY_PATH, "w") as f:
-            json.dump(history, f, indent=2)
+        with open(HISTORY_PATH, "w") as f: json.dump(history, f, indent=2)
     except: pass
 
 tab1, tab2, tab3 = st.tabs(["🚀 Generator", "📜 History", "🛠️ Admin"])
@@ -243,69 +227,30 @@ with tab2:
                     keyword = item.get('keyword', 'Unknown')
                     user = item.get('user', 'Unknown')
                     with st.expander(f"[{timestamp}] {keyword} (by {user})"):
-                        st.markdown(item.get('content', 'No content.'))
-                        if item.get('filename'):
-                            st.caption(f"Vault ID: {item['filename']}")
+                        st.markdown(item.get('content', 'No content available.'))
         except: st.error("History Load Error.")
 
 with tab3:
     st.subheader("Platform Administration")
-    admin_code = st.text_input("Admin Passcode", type="password")
+    admin_code = st.text_input("Admin Passcode", type="password", key="admin_pass_v54")
     if admin_code == "SleepyCat2026":
         st.success("Admin mode unlocked.")
-        
-        st.subheader("☁️ GitHub Vault Sync")
-        st.write("Push all local articles to the persistent GitHub repository.")
         if st.button("🚀 Sync to Cloud Vault"):
             try:
-                # Add all outputs to git
                 subprocess.run(["git", "config", "user.email", "admin@sleepycat.in"], check=True)
                 subprocess.run(["git", "config", "user.name", "SleepyCat Admin"], check=True)
                 subprocess.run(["git", "add", "outputs/*"], check=True)
                 subprocess.run(["git", "add", "*.json"], check=True)
                 subprocess.run(["git", "commit", "-m", f"Sync: {datetime.now().strftime('%Y-%m-%d %H:%M')}"], check=True)
                 subprocess.run(["git", "push", "origin", "master"], check=True)
-                st.success("Successfully synced all articles to GitHub 100GB Vault!")
+                st.success("Successfully synced all articles to GitHub!")
             except Exception as e:
                 st.error(f"Sync Failed: {e}")
-                
         st.markdown("---")
-        st.subheader("🧐 Memory Review Queue")
-        st.caption("Review rejected outputs and update the agent's long-term memory.")
-        
-        if os.path.exists(HISTORY_PATH):
-            with open(HISTORY_PATH, "r") as f:
-                history = json.load(f)
-            
-            rejections = [item for item in history if item.get('status') == "Rejected"]
-            if rejections:
-                for rej in rejections:
-                    with st.container(border=True):
-                        st.write(f"**Keyword:** {rej.get('keyword')}")
-                        st.error(f"**Reason:** {rej.get('feedback')}")
-                        if st.button("🧠 Update Agent Memory", key=f"mem_{rej.get('id')}"):
-                            new_mem_entry = {
-                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                "feedback": rej['feedback']
-                            }
-                            mems = []
-                            if os.path.exists(MEMORY_PATH):
-                                with open(MEMORY_PATH, "r") as f: mems = json.load(f)
-                            mems.append(new_mem_entry)
-                            with open(MEMORY_PATH, "w") as f: json.dump(mems, f, indent=2)
-                            st.success("Agent memory updated!")
-                            st.rerun()
-            else:
-                st.write("No pending memory updates.")
-
-        st.markdown("---")
-        # Logic to edit guidelines
         guideline_path = os.path.join(BASE_PATH, "brand_guidelines.txt")
         if os.path.exists(guideline_path):
-            with open(guideline_path, "r") as f:
-                dna = f.read()
-            new_dna = st.text_area("Edit Brand Guidelines", value=dna, height=300)
-            if st.button("Update Brand DNA"):
-                with open(guideline_path, "w") as f:
-                    f.write(new_dna)
-                st.success("Brand DNA updated!")
+            with open(guideline_path, "r") as f: dna = f.read()
+            new_dna = st.text_area("Edit DNA", value=dna, height=300)
+            if st.button("Update DNA"):
+                with open(guideline_path, "w") as f: f.write(new_dna)
+                st.success("DNA updated!")
