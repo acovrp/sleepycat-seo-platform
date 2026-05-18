@@ -205,25 +205,23 @@ class HumanizerAgent(BaseAgent):
 class Orchestrator:
     """Manages the hand-offs between the 5 distinct agents."""
     def __init__(self, model="gemini/gemini-1.5-flash"):
-        # Paths to real data
-        self.kb_path = r"C:\Users\Aayushi\sleepycat-brand\product knowledge"
-        self.brand_kb_path = r"C:\Users\Aayushi\sleepycat-brand\brand knowledge"
-        self.model = model
+        # Paths are now relative for Cloud Hosting compatibility
+        self.base_path = os.path.dirname(os.path.abspath(__file__))
         
-        # Load external data
-        self.brand_dna = self._load_file(os.path.join(self.brand_kb_path, "brand_guidelines.txt"), "D2C Sleep Brand")
-        self.tech_glossary = self._load_file(os.path.join(self.kb_path, "sleepycat-tech-glossary.md"), "")
-        self.product_db = self._load_json(os.path.join(self.kb_path, "sleepycat-products.json"), {"products": []})
-        self.humanizer_rules = self._load_file(os.path.join(self.brand_kb_path, "humanizer_rules.txt"), "Professional & Sharp.")
+        # Load external data from the SAME folder
+        self.brand_dna = self._load_file(os.path.join(self.base_path, "brand_guidelines.txt"), "D2C Sleep Brand")
+        self.tech_glossary = self._load_file(os.path.join(self.base_path, "sleepycat-tech-glossary.md"), "")
+        self.product_db = self._load_json(os.path.join(self.base_path, "product_catalog.json"), {"products": []})
+        self.humanizer_rules = self._load_file(os.path.join(self.base_path, "humanizer_rules.txt"), "Professional & Sharp.")
         
         # Filter product DB for relevant products to save context space
         self.filtered_products = self._filter_products(self.product_db)
 
         self.serp_agent = SERPScraperAgent()
-        self.strategist = BrandStrategistAgent(self.brand_dna, self.filtered_products, self.tech_glossary, self.model)
-        self.drafter = ReviewerPersonaAgent(self.tech_glossary, self.model)
-        self.seo_editor = SEOEditorAgent(self.model)
-        self.humanizer = HumanizerAgent(self.humanizer_rules, self.model)
+        self.strategist = BrandStrategistAgent(self.brand_dna, self.filtered_products, self.tech_glossary, model)
+        self.drafter = ReviewerPersonaAgent(self.tech_glossary, model)
+        self.seo_editor = SEOEditorAgent(model)
+        self.humanizer = HumanizerAgent(self.humanizer_rules, model)
 
     def _filter_products(self, db):
         """Keep only core mattresses and tech relevant products to keep JSON size manageable."""
@@ -246,7 +244,7 @@ class Orchestrator:
     def _load_memory(self):
         """Loads 'Why?' feedback from rejected outputs to avoid repeating mistakes."""
         try:
-            memory_path = os.path.join(self.brand_kb_path, "agent_memory.json")
+            memory_path = os.path.join(self.base_path, "agent_memory.json")
             if os.path.exists(memory_path):
                 with open(memory_path, "r") as f:
                     mem_data = json.load(f)
@@ -288,7 +286,7 @@ class Orchestrator:
         if __name__ == "__main__":
             filename = f"{keyword.replace(' ', '_')}_final.md"
             filename = "".join([c for c in filename if c.isalnum() or c in ('_', '.')]).rstrip()
-            with open(os.path.join(self.brand_kb_path, filename), "w", encoding="utf-8") as f:
+            with open(os.path.join(self.base_path, filename), "w", encoding="utf-8") as f:
                 f.write(final_content)
             print(f"\n[+] Data-driven output saved to {filename}")
             
