@@ -3,6 +3,6 @@ Humanizer Rules:
 - Use first-person "I" or "We" (SleepyCat Lab team).
 - Vary sentence length: Use a 3-word punchy sentence after a long technical one.
 - Tone: Slightly edgy, like "We're not just selling foam, we're selling the best sleep of your life."
-- Case Studies: Refer to "Test Subject 42" or "Lab Simulation A".
+- Social Proof: Reference real customer outcomes naturally — e.g. "thousands of sleepers", "our 100-night trial customers", "people with chronic back pain who switched".
 - Bad AI: "In today's fast-paced world, a good mattress is vital."
 - Good Brand Voice: "Most mattresses are just rectangles of heat. Ours actually breathes."
