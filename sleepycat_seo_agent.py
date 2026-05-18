@@ -197,9 +197,12 @@ REQUIRED SECTIONS:
 1. ARTICLE ANGLE: A unique hook that differentiates us from generic competitor jargon.
 2. TARGET READER: Who is searching this and what is their specific pain point.
 3. H2 STRUCTURE: 5-6 H2 section titles covering the topic comprehensively.
-4. KEY PRODUCT PUSHES: Select 1 Primary and 2 Secondary products from the DB. Explain WHY they solve the reader's problem.
+4. KEY PRODUCT PUSHES: Select 1 Primary + up to 4 Secondary products from the DB. Match material type to keyword intent (foam keyword → foam products; latex keyword → latex; comparison keyword → include both; pillow/accessory keyword → no mattresses).
 5. CONTENT GAPS: What competitors missed that we will cover.
 6. TONE NOTE: Specific voice guidance (Confident, Witty, Relatable Expert).
+7. PRODUCT_SLUGS: Output the exact slugs of all chosen products as a JSON array.
+   Format EXACTLY as: PRODUCT_SLUGS: ["slug-one", "slug-two", "slug-three"]
+   Use only slugs present in the PRODUCT DB. No invented slugs.
 
 BRAND DNA: {brand_dna[:2000]}
 TECH GLOSSARY: {tech_glossary[:2000]}
@@ -207,7 +210,8 @@ TECH GLOSSARY: {tech_glossary[:2000]}
 RULES:
 - Use real specs (AirGen™, 5-Zone Ortho, GOLS Latex).
 - Do not fabricate any features.
-- Angle must be 'The Art of Rest' vs 'Hustle Culture'."""
+- Angle must be 'The Art of Rest' vs 'Hustle Culture'.
+- Section 7 PRODUCT_SLUGS must be valid JSON — the Drafter reads it programmatically."""
         super().__init__("Strategist", system, 0.7, model)
         self.db = product_db
 
@@ -289,13 +293,16 @@ class Orchestrator:
         raw = self._json(os.path.join(self.base_path, "sleepycat-products.json"))
         self.products = raw.get("products", []) if isinstance(raw, dict) else raw
 
-        # Compact: just enough for Strategist to select the right products
+        # Compact: enough for Strategist to pick the right product type + material + use-case
         self.compact_products = [
             {
                 "name": p.get("product_name", ""),
                 "slug": p.get("slug", ""),
                 "category": p.get("category", ""),
-                "summary": (p.get("description_short") or p.get("description", ""))[:200],
+                "material": p.get("key_technologies", p.get("technologies", [])),
+                "firmness": p.get("firmness", ""),
+                "best_for": p.get("best_for", ""),
+                "summary": (p.get("description_short") or p.get("description", ""))[:150],
             }
             for p in self.products
         ]
@@ -314,11 +321,10 @@ class Orchestrator:
             for p in self.products
         ]
 
-        # Groq free tier: 6K TPM hard limit. Draft alone is ~2500 tokens, leaving ~3K for product data.
-        # Drafter: compact (~3K tokens) on Groq, full 202KB on paid providers.
+        # Groq free tier: 6K TPM hard limit.
+        # Drafter: _select_products() (3-5 full specs) on paid; compact on Groq.
         # SEO Architect: name+slug only (~700 tokens) on Groq — enough for internal links + table.
         self.is_groq = model.startswith("groq/")
-        self.drafter_products = self.compact_products if self.is_groq else self.products
         self.seo_arch_products = (
             [{"name": p.get("product_name", ""), "slug": p.get("slug", "")} for p in self.products]
             if self.is_groq else self.seo_products
@@ -339,6 +345,26 @@ class Orchestrator:
         try:
             with open(path, "r", encoding="utf-8") as f: return json.load(f)
         except: return {}
+
+    def _select_products(self, brief):
+        """Parse PRODUCT_SLUGS from Strategist brief. Returns full-spec products for those slugs.
+        Falls back to compact_products if parsing fails or no slugs match the DB."""
+        try:
+            m = re.search(r'PRODUCT_SLUGS:\s*(\[[\s\S]*?\])', brief)
+            if not m:
+                print("  [Orchestrator] No PRODUCT_SLUGS found — compact fallback")
+                return self.compact_products
+            slugs = json.loads(m.group(1))
+            slug_set = {s.lower().strip() for s in slugs if isinstance(s, str)}
+            selected = [p for p in self.products if p.get("slug", "").lower() in slug_set]
+            if not selected:
+                print(f"  [Orchestrator] No slug matches for {slugs} — compact fallback")
+                return self.compact_products
+            print(f"  [Orchestrator] Drafter gets {len(selected)} products: {[p.get('slug') for p in selected]}")
+            return selected
+        except Exception as e:
+            print(f"  [Orchestrator] Slug parse error: {e} — compact fallback")
+            return self.compact_products
 
     def _load_memory(self, agent_name=None):
         """Returns (positives_str, negatives_str) filtered to entries targeting this agent or 'all'."""
@@ -380,11 +406,14 @@ class Orchestrator:
         else:
             brief = cp["brief"]
 
+        # Select only the products Strategist recommended — Groq stays on compact (6K TPM limit)
+        drafter_db = self.compact_products if self.is_groq else self._select_products(brief)
+
         if not cp.get("draft"):
             pos, neg = self._load_memory("drafter")
-            ctx = f"STRATEGY BRIEF:\n{brief}\n\nPRODUCT DB:\n{json.dumps(self.drafter_products, indent=1)}"
+            ctx = f"STRATEGY BRIEF:\n{brief}\n\nPRODUCT DB:\n{json.dumps(drafter_db, indent=1)}"
             _cb("drafter", "running", ctx, "")
-            draft = self.drafter.execute_task(brief, self.drafter_products, neg=neg, pos=pos)
+            draft = self.drafter.execute_task(brief, drafter_db, neg=neg, pos=pos)
             if _is_error(draft): return draft, round(time.time() - start, 1)
             _cb("drafter", "done", ctx, draft)
         else:
