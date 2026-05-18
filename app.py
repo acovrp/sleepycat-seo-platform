@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import os
 import json
 import urllib.parse
@@ -41,16 +40,7 @@ def login_ui():
     }
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
 
-    # Button lives inside components.html iframe — onclick fires with live user gesture,
-    # satisfying allow-top-navigation-by-user-activation sandbox requirement.
-    components.html(f'''
-        <button onclick="window.open('{auth_url}','_top')"
-                style="background:#4285F4;color:white;padding:15px 30px;border:none;
-                       border-radius:8px;font-size:18px;font-weight:bold;cursor:pointer;
-                       width:100%;font-family:sans-serif;">
-            🚀 Sign in with SleepyCat Google Account
-        </button>
-    ''', height=60)
+    st.link_button("🚀 Sign in with Google", auth_url, use_container_width=True, type="primary")
 
     # OAuth callback handler
     qp = st.query_params
