@@ -33,7 +33,7 @@ if 'user_email' not in st.session_state:
     st.session_state['user_email'] = None
 
 def login_ui():
-    st.title("🐈 SleepyCat SEO Engine (v5.6)")
+    st.title("🐈 SleepyCat SEO Engine (v5.7)")
     st.subheader("Enterprise Login Required")
     st.info("Authorized access for @sleepycat.in domains only.")
     
@@ -41,14 +41,13 @@ def login_ui():
         st.error("⚠️ GOOGLE_CLIENT_SECRET is missing from Streamlit Secrets.")
         return
 
-    # Manual Auth URL Construction
+    # Manual Auth URL Construction (Simplified for compatibility)
     params = {
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
-        "scope": "openid email profile", # openid restored
+        "scope": "email profile",
         "prompt": "select_account",
-        "hd": "sleepycat.in",
         "access_type": "online"
     }
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
@@ -62,15 +61,14 @@ def login_ui():
     ''', unsafe_allow_html=True)
 
     st.markdown("---")
-    with st.expander("🛠️ FIX THE 403 ERROR (Admin Only)"):
-        st.write("Google is blocking the app because the 'Redirect URI' doesn't match.")
-        st.write("1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials).")
-        st.write("2. Click on your OAuth 2.0 Client ID.")
-        st.write("3. Under **Authorized redirect URIs**, copy and paste this exactly:")
+    with st.expander("🛠️ FINAL ROOT FIX (If 403 persists)"):
+        st.write("**You must complete these 2 steps in your Google Console:**")
+        st.write("1. **Enable People API:** Search for 'Google People API' in GCC Library and click **ENABLE**.")
+        st.write("2. **Authorized Domain:** In 'OAuth consent screen' tab, add `streamlit.app` to the **Authorized domains** list.")
+        st.write("3. **Redirect URI:** Ensure this is exact (with slash):")
         st.code(REDIRECT_URI)
-        st.write("4. **Save** and wait 60 seconds. Then try logging in again.")
 
-    st.caption("Build Verification: **v5.6-URI-FIX**")
+    st.caption("Build Verification: **v5.7-PEOPLE-API-READY**")
     st.caption(f"Server Time: {datetime.now().strftime('%H:%M:%S UTC')}")
 
     # Handle Callback
