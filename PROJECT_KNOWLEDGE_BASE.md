@@ -43,3 +43,60 @@ The system utilizes a sequential hand-off model where specialized agents perform
 
 ---
 *Created by Gemini CLI & SleepyCat Team - May 2026*
+
+---
+
+## 6. Agent Prompt Specifications (v5.9)
+
+Each agent's system prompt is defined in `sleepycat_seo_agent.py`. This section documents the intended behaviour so future edits don't regress content quality.
+
+### Agent 1 — SERP Spy
+- Scrapes **3 URLs** (up from 2), 3s timeout
+- Extracts: H2/H3 headings (up to 6) + first 2 paragraph previews (150 chars each)
+- Output: raw competitor structure passed to Strategist
+
+### Agent 2 — Brand Strategist
+- Produces a **structured strategy brief** with 6 sections: Article Angle, Target Reader, H2 Structure (5-6 headings), Key Product Pushes, Content Gaps, Tone Note
+- Has full brand DNA + product DB in system prompt
+- Temperature: 0.7 (creative angles needed)
+
+### Agent 3 — Lab Tester / Drafter
+- Writes **1000-1500 word full draft** following the Brand Final Formula
+- Formula: Hook → 4-5 H2 sections → "Why SleepyCat?" section → CTA closing
+- Anti-jargon enforced: no ILD/density/coil count — use feel/materials/support
+- Temperature: 0.4 (factual but natural)
+- Uses only verified specs from product_catalog.json
+
+### Agent 4 — SEO Architect
+- **Does NOT shorten the article** — common regression point
+- Adds 40-50 word AEO snippet immediately after H1 (bold, direct answer)
+- Adds/improves comparison table with: Mattress | Technology | Key Benefit | Firmness | Best For | Link
+- Adds internal links: Ultima/Original/Ortho → sleepycat.in/products/{name}
+- Temperature: 0.1 (precise, structural)
+
+### Agent 5 — Senior Editor / Humanizer
+- Receives full humanizer_rules.txt content as system prompt
+- Must preserve ALL content — tables, links, AEO snippet, length (1000+ words)
+- Temperature: 0.5
+
+---
+
+## 7. File Map
+
+| File | Purpose | Used By |
+|------|---------|---------|
+| `brand_guidelines.txt` | Full SleepyCat brand DNA (2500 chars) | Strategist, Drafter |
+| `humanizer_rules.txt` | Voice/tone rules for final pass | Humanizer |
+| `product_catalog.json` | `{"ProductName": {tech, benefit, firmness, target}}` | Strategist, Drafter, SEO Architect |
+| `agent_memory.json` | RLHF feedback loop (last 3 entries used) | All agents as negative constraints |
+| `generation_history.json` | Archive of all successful generations | History tab |
+
+---
+
+## 8. Changelog
+
+| Version | Date | Change |
+|---------|------|--------|
+| v5.9 | May 2026 | Rewrote all 5 agent system prompts. Strategist now produces structured brief. Drafter outputs 1000-1500 words using Brand Final Formula. SEO Architect no longer shortens content — adds AEO snippet at top instead. Humanizer given full rules. SERP scraper upgraded to 3 URLs. Fixed product_catalog.json loading (was looking for sleepycat-products.json). Fixed multi-provider support: Gemini, Claude 4.x, GPT-4o, Kimi. MODEL_MAP separates display names from litellm model IDs. |
+| v5.8 | May 2026 | Ultra-Performance overhaul by Gemini CLI. Reduced generation time. (Note: gutted agent prompts — caused short/generic output, fixed in v5.9) |
+| v5.0 | May 2026 | Google OAuth, Streamlit Cloud hosting, @sleepycat.in domain restriction |
