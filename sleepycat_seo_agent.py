@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # ==========================================
 # SleepyCat True Multi-Agent E-E-A-T System
-# Engine v6.1 (Merged: Deep Content + High Performance)
+# Engine v6.2 (RLHF: Positive + Negative Memory)
 # ==========================================
 
 class BaseAgent:
@@ -19,12 +19,16 @@ class BaseAgent:
         self.temperature = temperature
         self.primary_model = primary_model
 
-    def execute_task(self, prompt_context, negative_constraints=""):
+    def execute_task(self, prompt_context, negative_constraints="", positive_examples=""):
         print(f"  [Agent: {self.name}] Started...")
-        full_system = f"{self.role_description}\n\nPAST FEEDBACK TO AVOID:\n{negative_constraints}" if negative_constraints else self.role_description
+        parts = [self.role_description]
+        if positive_examples:
+            parts.append(f"\nWHAT WORKED WELL (keep doing this):\n{positive_examples}")
+        if negative_constraints:
+            parts.append(f"\nPAST FEEDBACK TO AVOID:\n{negative_constraints}")
+        full_system = "\n".join(parts)
         messages = [{"role": "system", "content": full_system}, {"role": "user", "content": prompt_context}]
         try:
-            # 90s timeout for long-form generations
             response = litellm.completion(model=self.primary_model, messages=messages, temperature=self.temperature, timeout=90)
             return response.choices[0].message.content
         except Exception as e:
@@ -83,8 +87,8 @@ RULES:
         super().__init__("Strategist", system, 0.7, model)
         self.db = product_db
 
-    def execute_task(self, context, neg=""):
-        return super().execute_task(f"{context}\n\nPRODUCT DB:\n{json.dumps(self.db, indent=1)}", neg)
+    def execute_task(self, context, neg="", pos=""):
+        return super().execute_task(f"{context}\n\nPRODUCT DB:\n{json.dumps(self.db, indent=1)}", negative_constraints=neg, positive_examples=pos)
 
 
 class ReviewerPersonaAgent(BaseAgent):
@@ -92,7 +96,7 @@ class ReviewerPersonaAgent(BaseAgent):
     def __init__(self, brand_dna, tech_glossary, model):
         system = f"""You are SleepyCat's Technical Drafter. Write a complete first draft (1000-1500 words).
 
-BRAND VOICE: Confident, witty, chilled. Never clinical. Use "we". 
+BRAND VOICE: Confident, witty, chilled. Never clinical. Use "we".
 ANTI-JARGON: NEVER use ILD, density, coil count. Use "feel", "materials", "support".
 
 CONTENT FORMULA:
@@ -109,8 +113,8 @@ REQUIREMENTS:
 GLOSSARY: {tech_glossary[:1000]}"""
         super().__init__("Drafter", system, 0.4, model)
 
-    def execute_task(self, brief, db, neg=""):
-        return super().execute_task(f"STRATEGY BRIEF:\n{brief}\n\nPRODUCT DB:\n{json.dumps(db, indent=1)}", neg)
+    def execute_task(self, brief, db, neg="", pos=""):
+        return super().execute_task(f"STRATEGY BRIEF:\n{brief}\n\nPRODUCT DB:\n{json.dumps(db, indent=1)}", negative_constraints=neg, positive_examples=pos)
 
 
 class SEOEditorAgent(BaseAgent):
@@ -127,8 +131,8 @@ TASKS:
 Final output must be 1000+ words."""
         super().__init__("SEO Architect", system, 0.1, model)
 
-    def execute_task(self, draft, keyword, db, neg=""):
-        return super().execute_task(f"TARGET: {keyword}\n\nPRODUCT DB:\n{json.dumps(db, indent=1)}\n\nDRAFT:\n{draft}", neg)
+    def execute_task(self, draft, keyword, db, neg="", pos=""):
+        return super().execute_task(f"TARGET: {keyword}\n\nPRODUCT DB:\n{json.dumps(db, indent=1)}\n\nDRAFT:\n{draft}", negative_constraints=neg, positive_examples=pos)
 
 
 class HumanizerAgent(BaseAgent):
@@ -146,14 +150,12 @@ RULES: {rules}
 class Orchestrator:
     def __init__(self, model="gemini/gemini-1.5-flash"):
         self.base_path = os.path.dirname(os.path.abspath(__file__))
-        dna = self._read(os.path.join(self.base_path, "brand_guidelines.txt"))[:2500]
-        tech = self._read(os.path.join(self.base_path, "sleepycat-tech-glossary.md"))[:2000]
-        rules = self._read(os.path.join(self.base_path, "humanizer_rules.txt"))[:1000]
+        dna = self._read(os.path.join(self.base_path, "brand_guidelines.txt"))
+        tech = self._read(os.path.join(self.base_path, "sleepycat-tech-glossary.md"))
+        rules = self._read(os.path.join(self.base_path, "humanizer_rules.txt"))
+        raw = self._json(os.path.join(self.base_path, "product_catalog.json"))
 
-        # Load FULL database (200KB+)
-        db = self._json(os.path.join(self.base_path, "sleepycat-products.json"))
-        self.products = [p for p in db.get("products", []) if p.get("category") == "Mattresses"]
-
+        self.products = [{"name": k, **v} for k, v in raw.items()] if isinstance(raw, dict) else raw
 
         self.serp_agent = SERPScraperAgent()
         self.strategist = BrandStrategistAgent(dna, self.products, tech, model)
@@ -175,29 +177,29 @@ class Orchestrator:
         try:
             p = os.path.join(self.base_path, "agent_memory.json")
             if os.path.exists(p):
-                with open(p, "r") as f:
-                    m = json.load(f)
-                    return "\n".join([f"- {i['feedback']}" for i in m[-3:]])
-            return ""
-        except: return ""
+                with open(p, "r") as f: m = json.load(f)
+                pos = "\n".join([f"- {i['feedback']}" for i in m[-6:] if i.get('type') == 'positive'])
+                neg = "\n".join([f"- {i['feedback']}" for i in m[-6:] if i.get('type') == 'negative'])
+                return pos, neg
+            return "", ""
+        except: return "", ""
 
     def run(self, keyword):
         start = time.time()
         print(f"\n🚀 Pipeline Start: {keyword}")
-        mem = self._load_memory()
+        positives, negatives = self._load_memory()
 
         serp   = self.serp_agent.execute_task(keyword)
-        brief  = self.strategist.execute_task(f"TARGET: {keyword}\nSERP: {serp}", mem)
-        draft  = self.drafter.execute_task(brief, self.products, mem)
-        opt    = self.seo_editor.execute_task(draft, keyword, self.products, mem)
-        final  = self.humanizer.execute_task(opt, mem)
+        brief  = self.strategist.execute_task(f"TARGET: {keyword}\nSERP: {serp}", neg=negatives, pos=positives)
+        draft  = self.drafter.execute_task(brief, self.products, neg=negatives, pos=positives)
+        opt    = self.seo_editor.execute_task(draft, keyword, self.products, neg=negatives, pos=positives)
+        final  = self.humanizer.execute_task(opt, negative_constraints=negatives, positive_examples=positives)
 
         dur = round(time.time() - start, 1)
         return final, dur
 
 
 if __name__ == "__main__":
-    # Local terminal testing
     try:
         if os.isatty(0):
             target = input("Target Keyword: ")

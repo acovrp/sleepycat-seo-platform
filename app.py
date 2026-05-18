@@ -17,10 +17,10 @@ from google.auth.transport import requests as google_requests
 st.set_page_config(page_title="SleepyCat Engine", page_icon="🐈", layout="wide")
 
 MODEL_MAP = {
-    "Claude Sonnet (Company)": "anthropic/claude-3-5-sonnet-latest",
-    "Claude Opus (Company)":   "anthropic/claude-3-opus-latest",
-    "Claude Sonnet":           "anthropic/claude-3-5-sonnet-latest",
-    "Claude Opus":             "anthropic/claude-3-opus-latest",
+    "Claude Sonnet (Company)": "anthropic/claude-sonnet-4-6",
+    "Claude Opus (Company)":   "anthropic/claude-opus-4-7",
+    "Claude Sonnet":           "anthropic/claude-sonnet-4-6",
+    "Claude Opus":             "anthropic/claude-opus-4-7",
     "Gemini Flash":            "gemini/gemini-2.5-flash",
     "Gemini Pro":              "gemini/gemini-2.5-pro",
     "GPT-4o":                  "gpt-4o",
@@ -187,6 +187,20 @@ def update_feedback(gen_id, feedback, status):
                 break
         with open(HISTORY_PATH, "w") as f: json.dump(hist, f, indent=2)
 
+def write_memory(keyword, feedback_text, memory_type):
+    mem = []
+    try:
+        if os.path.exists(MEMORY_PATH):
+            with open(MEMORY_PATH, "r") as f: mem = json.load(f)
+    except: pass
+    mem.append({
+        "type": memory_type,
+        "feedback": feedback_text,
+        "keyword": keyword,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
+    })
+    with open(MEMORY_PATH, "w") as f: json.dump(mem, f, indent=2)
+
 # --- Tabs ---
 t1, t2, t3 = st.tabs(["🚀 Generator", "📜 History", "🛠️ Admin"])
 
@@ -225,19 +239,25 @@ with t2:
                         if i.get('feedback'): st.info(f"**Feedback:** {i['feedback']}")
                         
                         iid = i.get('id')
-                        if iid:
+                        status_val = i.get('status', 'Pending Review')
+                        if iid and status_val == "Pending Review":
                             f1, f2 = st.columns(2)
                             with f1:
-                                if st.button("✅ Accept", key=f"acc_{iid}"):
+                                if st.button("👍 Approve", key=f"acc_{iid}"):
                                     update_feedback(iid, "Verified Quality", "Approved")
                                     st.rerun()
                             with f2:
-                                if st.button("❌ Reject", key=f"rej_{iid}"):
-                                    st.session_state[f"show_rej_{iid}"] = True
-                            if st.session_state.get(f"show_rej_{iid}", False):
-                                reason = st.text_area("Why rejection?", key=f"reason_{iid}")
-                                if st.button("Submit", key=f"sub_{iid}"):
-                                    update_feedback(iid, reason, "Rejected")
+                                if st.button("👎 Give Feedback", key=f"rej_{iid}"):
+                                    st.session_state[f"fb_mode_{iid}"] = True
+                            if st.session_state.get(f"fb_mode_{iid}", False):
+                                good = st.text_area("What was good? (optional)", key=f"good_{iid}")
+                                bad  = st.text_area("What was bad? (optional)",  key=f"bad_{iid}")
+                                if st.button("Submit Feedback", key=f"sub_{iid}"):
+                                    kw = i.get('keyword', '')
+                                    if good.strip(): write_memory(kw, good.strip(), "positive")
+                                    if bad.strip():  write_memory(kw, bad.strip(),  "negative")
+                                    update_feedback(iid, (good + " | " + bad).strip(" |"), "Reviewed")
+                                    st.session_state[f"fb_mode_{iid}"] = False
                                     st.rerun()
         except: st.error("History load error.")
 
@@ -269,12 +289,7 @@ with t3:
                         st.write(f"**Keyword:** {r.get('keyword')} | **Reason:** {r.get('feedback')}")
                         rid = r.get('id')
                         if rid and st.button("🧠 Update Agent Memory", key=f"mem_{rid}"):
-                            new_mem = {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"), "feedback": r['feedback']}
-                            mems = []
-                            if os.path.exists(MEMORY_PATH):
-                                with open(MEMORY_PATH, "r") as f: mems = json.load(f)
-                            mems.append(new_mem)
-                            with open(MEMORY_PATH, "w") as f: json.dump(mems, f, indent=2)
+                            write_memory(r.get('keyword', ''), r['feedback'], "negative")
                             update_feedback(rid, r['feedback'], "Memory Updated")
                             st.success("Agent brain updated!")
                             st.rerun()
