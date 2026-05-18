@@ -258,13 +258,13 @@ def run_pipeline(kw, model_choice, resume=False, special_instructions=""):
 
         # Agent 3 — Drafter
         import json as _json
-        draft_ctx = f"STRATEGY BRIEF:\n{brief}\n\nPRODUCT DB:\n{_json.dumps(engine.products, indent=1)}"
+        draft_ctx = f"STRATEGY BRIEF:\n{brief}\n\nPRODUCT DB:\n{_json.dumps(engine.drafter_products, indent=1)}"
         if checkpoint["draft"]:
             st.success(f"⚡ Draft — loaded from checkpoint ({len(checkpoint['draft'].split())} words)")
             draft = checkpoint["draft"]
         else:
             draft = _stream_agent("🧪 **Drafter** writing 1000-1500 word article...",
-                                  engine.drafter.stream_task(brief, engine.products))
+                                  engine.drafter.stream_task(brief, engine.drafter_products))
             if _is_error(draft): fail("drafter", draft); return None
             checkpoint["draft"] = draft
             st.success(f"✅ Draft — {len(draft.split())} words")
@@ -364,6 +364,8 @@ with t1:
             height=90,
         )
         engine_choice = st.selectbox("Engine", models if models else ["No Keys Found"])
+        if "Groq" in engine_choice:
+            st.caption("⚡ Groq free tier: compact product DB used for Drafter (6K TPM limit). Full DB on paid providers.")
         generate_btn = st.button("🚀 Generate Blog Post", type="primary")
 
         # Resume banner — shown when a previous run failed mid-pipeline

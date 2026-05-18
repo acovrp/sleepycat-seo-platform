@@ -295,6 +295,11 @@ class Orchestrator:
             for p in self.products
         ]
 
+        # Groq free tier is capped at ~6K TPM — full 69-product JSON (~51K tokens) exceeds it.
+        # Use compact products for Drafter on Groq; full products on all paid providers.
+        self.is_groq = model.startswith("groq/")
+        self.drafter_products = self.compact_products if self.is_groq else self.products
+
         self.serp_agent = SERPScraperAgent()
         self.strategist = BrandStrategistAgent(dna, self.compact_products, tech, model)
         self.drafter = ReviewerPersonaAgent(dna, tech, model)
@@ -342,7 +347,7 @@ class Orchestrator:
 
         if not cp.get("draft"):
             pos, neg = self._load_memory("drafter")
-            draft = self.drafter.execute_task(brief, self.products, neg=neg, pos=pos)
+            draft = self.drafter.execute_task(brief, self.drafter_products, neg=neg, pos=pos)
             if _is_error(draft): return draft, round(time.time() - start, 1)
         else:
             draft = cp["draft"]
