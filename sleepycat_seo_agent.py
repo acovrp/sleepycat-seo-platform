@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import requests
 import time
 from bs4 import BeautifulSoup
@@ -35,12 +36,21 @@ class BaseAgent:
         print(f"  [Agent: {self.name}] Started...")
         full_system = self._build_system(negative_constraints, positive_examples)
         messages = [{"role": "system", "content": full_system}, {"role": "user", "content": prompt_context}]
-        try:
-            response = litellm.completion(model=self.primary_model, messages=messages, temperature=self.temperature, timeout=180)
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"    Error in {self.name}: {e}")
-            return f"Agent {self.name} failed: {e}"
+        for attempt in range(3):
+            try:
+                response = litellm.completion(model=self.primary_model, messages=messages, temperature=self.temperature, timeout=180)
+                return response.choices[0].message.content
+            except Exception as e:
+                err = str(e)
+                is_rate_limit = "rate_limit" in err.lower() or "429" in err or "RateLimitError" in err or "RESOURCE_EXHAUSTED" in err
+                if is_rate_limit and attempt < 2:
+                    m = re.search(r'retry[^\d]*(\d+(?:\.\d+)?)', err, re.IGNORECASE)
+                    delay = min(int(float(m.group(1))) + 5, 90) if m else 65
+                    print(f"  [{self.name}] Rate limit — retrying in {delay}s (attempt {attempt+1}/3)...")
+                    time.sleep(delay)
+                else:
+                    print(f"    Error in {self.name}: {e}")
+                    return f"Agent {self.name} failed: {e}"
 
     def stream_task(self, prompt_context, negative_constraints="", positive_examples=""):
         """Yields cumulative text as LLM generates. Falls back to non-streaming on Gemini repetition loops."""
