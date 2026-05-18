@@ -1,4 +1,4 @@
-# 🐈 SleepyCat SEO Platform: 360° Knowledge Base (v6.1)
+# 🐈 SleepyCat SEO Platform: 360° Knowledge Base (v6.1.1)
 
 ## 1. Project Mission
 To transform SleepyCat’s content strategy from "AI-assisted drafting" to a "Data-Driven, Multi-Agent SEO Factory." The platform generates 1000-1500 word AEO-optimized blog posts grounded in real-time competitor data and verified product specs (E-E-A-T).
@@ -40,4 +40,50 @@ The system utilizes a sequential hand-off model:
 -   **Repository:** `acovrp/sleepycat-seo-platform`
 
 ---
-*Unified v6.1 Build - May 2026*
+
+## 6. Agent Prompt Specifications (v5.9 Claude Suggestions)
+
+Each agent's system prompt is defined in `sleepycat_seo_agent.py`. This section documents the intended behaviour so future edits don't regress content quality.
+
+### Agent 1 — SERP Spy
+- Scrapes **3 URLs**, 3s timeout
+- Extracts: H2/H3 headings (up to 6) + first 2 paragraph previews (150 chars each)
+- Output: raw competitor structure passed to Strategist
+
+### Agent 2 — Brand Strategist
+- Produces a **structured strategy brief** with 6 sections: Article Angle, Target Reader, H2 Structure (5-6 headings), Key Product Pushes, Content Gaps, Tone Note
+- Has full brand DNA + product DB in system prompt
+- Temperature: 0.7 (creative angles needed)
+
+### Agent 3 — Lab Tester / Drafter
+- Writes **1000-1500 word full draft** following the Brand Final Formula
+- Formula: Hook → 4-5 H2 sections → "Why SleepyCat?" section → CTA closing
+- Anti-jargon enforced: no ILD/density/coil count — use feel/materials/support
+- Temperature: 0.4 (factual but natural)
+- Uses only verified specs from product_catalog.json
+
+### Agent 4 — SEO Architect
+- **Does NOT shorten the article** — common regression point
+- Adds 40-50 word AEO snippet immediately after H1 (bold, direct answer)
+- Adds/improves comparison table with: Mattress | Technology | Key Benefit | Firmness | Best For | Link
+- Adds internal links: Ultima/Original/Ortho → sleepycat.in/products/{name}
+- Temperature: 0.1 (precise, structural)
+
+### Agent 5 — Senior Editor / Humanizer
+- Receives full humanizer_rules.txt content as system prompt
+- Must preserve ALL content — tables, links, AEO snippet, length (1000+ words)
+- Temperature: 0.5
+
+---
+
+## 7. Changelog
+
+| Version | Date | Change |
+|---------|------|--------|
+| v6.1.1 | May 2026 | **Unified Aligned Build.** Merged Claude's v5.9 deep-content prompts with the full 69-product `sleepycat-products.json` database. Restored Enterprise Cloud Sync, Knowledge Vault, and Admin controls. |
+| v5.9 | May 2026 | (Claude Suggestion) Rewrote all 5 agent system prompts. Strategist now produces structured brief. Drafter outputs 1000-1500 words using Brand Final Formula. SEO Architect no longer shortens content — adds AEO snippet at top instead. |
+| v5.8 | May 2026 | (Gemini CLI) Ultra-Performance overhaul. Reduced generation time to <2 mins. |
+| v5.0 | May 2026 | Google OAuth, Streamlit Cloud hosting, @sleepycat.in domain restriction |
+
+---
+*Unified v6.1.1 Build - May 2026*
