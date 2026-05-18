@@ -78,42 +78,92 @@ def _is_error(text):
     return t.startswith("Agent ") and " failed:" in t
 
 
+COMPETITOR_DOMAINS = [
+    "thesleepcompany.in", "wakefit.co", "duroflex.com", "sunday.in",
+    "kurlon.com", "sleepycat.in", "wakeup.in", "flo.health", "centuary.in",
+    "morningsleepcompany.com", "peps.in", "springwel.com",
+]
+URL_BLACKLIST = [
+    "youtube.com", "youtu.be", "reddit.com", "amazon.", "flipkart.",
+    "quora.com", "facebook.com", "instagram.com", "twitter.com", "x.com",
+    "snapchat.com", "tiktok.com",
+]
+
 class SERPScraperAgent:
-    """Agent 1: Uses DuckDuckGo for URL discovery, then scrapes H2/H3 headings from each page."""
+    """Agent 1: Two-pass DDG search (competitor blogs first, filtered fallback second) + rich page scraping."""
     def __init__(self):
         self.name = "The SERP Spy"
 
-    def _scrape_headings(self, url):
-        """Best-effort heading extraction from a URL. Returns list or empty list."""
+    def _scrape_page(self, url):
+        """Scrapes meta description, H1, H2/H3, first 4 paragraphs, bold claims from a URL."""
         try:
             res = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
-            if res.status_code != 200: return []
+            if res.status_code != 200: return {}
             soup = BeautifulSoup(res.text, 'html.parser')
-            return [h.get_text().strip() for h in soup.find_all(['h2', 'h3'])[:6] if h.get_text().strip()]
+
+            meta_desc = ""
+            meta_tag = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
+            if meta_tag: meta_desc = (meta_tag.get("content") or "")[:200]
+
+            h1 = next((h.get_text().strip() for h in soup.find_all('h1')[:1]), "")
+            headings = [h.get_text().strip() for h in soup.find_all(['h2', 'h3'])[:8] if h.get_text().strip()]
+            paras = [p.get_text().strip()[:200] for p in soup.find_all('p')[:4] if len(p.get_text().strip()) > 60]
+            bold = list({b.get_text().strip() for b in soup.find_all(['strong', 'b'])
+                         if 10 < len(b.get_text().strip()) < 120})[:5]
+
+            return {"meta": meta_desc, "h1": h1, "headings": headings, "paras": paras, "bold": bold}
+        except:
+            return {}
+
+    def _ddg_search(self, query, max_results=5):
+        try:
+            return DDGS().text(query, max_results=max_results) or []
         except:
             return []
 
+    def _is_junk(self, url):
+        return any(b in url for b in URL_BLACKLIST)
+
     def execute_task(self, keyword):
-        print(f"  [Agent: {self.name}] Searching via DuckDuckGo...")
-        try:
-            ddg_results = DDGS().text(f"{keyword} India", max_results=3)
-            if not ddg_results:
-                return "No real-time SERP data available."
+        print(f"  [Agent: {self.name}] Two-pass DDG search...")
+        collected = []
 
-            urls = [r['href'] for r in ddg_results]
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                headings_list = list(executor.map(self._scrape_headings, urls))
+        # Pass 1: competitor blog targeting
+        site_filter = " OR ".join(f"site:{d}" for d in COMPETITOR_DOMAINS)
+        p1_results = self._ddg_search(f"{keyword} ({site_filter})", max_results=5)
+        for r in p1_results:
+            if not self._is_junk(r['href']) and len(collected) < 3:
+                collected.append(r)
 
-            output = []
-            for r, headings in zip(ddg_results, headings_list):
-                entry = f"URL: {r['href']}\nTitle: {r['title']}\nPreview: {r['body'][:150]}"
-                if headings:
-                    entry += f"\nHeadings: {', '.join(headings)}"
-                output.append(entry)
+        # Pass 2: generic fallback — fill up to 3 if pass 1 came up short
+        if len(collected) < 3:
+            p2_results = self._ddg_search(f"{keyword} India mattress", max_results=8)
+            seen = {r['href'] for r in collected}
+            for r in p2_results:
+                if not self._is_junk(r['href']) and r['href'] not in seen and len(collected) < 3:
+                    collected.append(r)
+                    seen.add(r['href'])
 
-            return "\n\n".join(output)
-        except Exception as e:
-            return f"SERP scraping failed: {e}"
+        if not collected:
+            return "No real-time SERP data available."
+
+        # Scrape each URL in parallel for rich page data
+        urls = [r['href'] for r in collected]
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            page_data = list(executor.map(self._scrape_page, urls))
+
+        output = []
+        for r, pd in zip(collected, page_data):
+            lines = [f"URL: {r['href']}", f"Title: {r['title']}"]
+            if pd.get("meta"):    lines.append(f"Meta: {pd['meta']}")
+            if pd.get("h1"):      lines.append(f"H1: {pd['h1']}")
+            if pd.get("headings"):lines.append(f"H2/H3: {' | '.join(pd['headings'])}")
+            if pd.get("paras"):   lines.append(f"Content: {' // '.join(pd['paras'])}")
+            if pd.get("bold"):    lines.append(f"Key claims: {' | '.join(pd['bold'])}")
+            if not pd:            lines.append(f"Preview: {r['body'][:200]}")
+            output.append("\n".join(lines))
+
+        return "\n\n".join(output)
 
 
 class BrandStrategistAgent(BaseAgent):
