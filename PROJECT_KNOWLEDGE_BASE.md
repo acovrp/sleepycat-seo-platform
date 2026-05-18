@@ -63,7 +63,7 @@ Each agent's system prompt is defined in `sleepycat_seo_agent.py`. This section 
 - Formula: Hook → 4-5 H2 sections → "Why SleepyCat?" section → CTA closing
 - Anti-jargon enforced: no ILD/density/coil count — use feel/materials/support
 - Temperature: 0.4 (factual but natural)
-- Uses only verified specs from product_catalog.json
+- Uses only verified specs from sleepycat-products.json (69 products, `products[]` array)
 
 ### Agent 4 — SEO Architect
 - **Does NOT shorten the article** — common regression point

@@ -154,8 +154,7 @@ class Orchestrator:
         tech = self._read(os.path.join(self.base_path, "sleepycat-tech-glossary.md"))
         rules = self._read(os.path.join(self.base_path, "humanizer_rules.txt"))
         raw = self._json(os.path.join(self.base_path, "sleepycat-products.json"))
-
-        self.products = [{"name": k, **v} for k, v in raw.items()] if isinstance(raw, dict) else raw
+        self.products = raw.get("products", []) if isinstance(raw, dict) else raw
 
         self.serp_agent = SERPScraperAgent()
         self.strategist = BrandStrategistAgent(dna, self.products, tech, model)
