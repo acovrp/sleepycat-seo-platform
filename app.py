@@ -59,14 +59,14 @@ with st.sidebar:
     if gemini_key:
         st.session_state['GEMINI_KEY'] = gemini_key
         st.success("Gemini: Connected ✅")
-        connected_models.extend(["gemini/gemini-1.5-flash", "gemini/gemini-1.5-pro", "gemini/gemini-2.0-flash-exp"])
+        connected_models.extend(["gemini/gemini-2.5-flash", "gemini/gemini-2.5-pro"])
     else:
         st.warning("Gemini: Disconnected ❌")
         
     if claude_key:
         st.session_state['CLAUDE_KEY'] = claude_key
         st.info("Claude: Connected ✅")
-        connected_models.extend(["claude-3-5-sonnet-20240620", "claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-haiku-20240307"])
+        connected_models.extend(["anthropic/claude-3-5-sonnet-2026", "anthropic/claude-3-5-sonnet-latest"])
         
     if openai_key:
         st.session_state['OPENAI_KEY'] = openai_key
