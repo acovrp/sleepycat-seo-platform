@@ -239,18 +239,33 @@ def run_pipeline(kw, model_choice, resume=False, special_instructions=""):
             else:
                 st.warning(f"⚠️ SERP returned no live data — proceeding without competitor context.\n\n`{serp[:200]}`")
 
-        # Agents 2–5: status lines only — engine.run() handles all API calls with memory injection
-        st.write("🐈 **Strategist** — crafting content brief...")
-        st.write("🧪 **Drafter** — writing 1,000–1,500 word article...")
-        st.write("🏗️ **SEO Architect** — AEO snippet + comparison table...")
-        st.write("✍️ **Senior Editor** — final brand polish...")
+        # Agents 2–5: placeholders that the callback updates to show the active agent
+        AGENT_LABEL = {
+            "strategist":   "🐈 Strategist — crafting content brief",
+            "drafter":      "🧪 Drafter — writing 1,000–1,500 word article",
+            "seo_architect":"🏗️ SEO Architect — AEO snippet + comparison table",
+            "humanizer":    "✍️ Senior Editor — final brand polish",
+        }
+        phs = {k: st.empty() for k in AGENT_LABEL}
+        for k, ph in phs.items():
+            ph.write(f"⏳ {AGENT_LABEL[k]}...")
 
-        final, dur = engine.run(kw, checkpoint={"keyword": kw, "serp": serp} if serp else None)
+        def on_progress(agent, status, ctx, out):
+            if status == "running":
+                phs[agent].markdown(f"**⚙️ {AGENT_LABEL[agent]}...**")
+            else:
+                words = len(out.split()) if out else 0
+                phs[agent].write(f"✅ {AGENT_LABEL[agent]} ({words:,} words)")
+                _track(ctx, out)
+
+        final, dur = engine.run(
+            kw,
+            checkpoint={"keyword": kw, "serp": serp} if serp else None,
+            progress_callback=on_progress,
+        )
         if _is_error(final):
             fail(final)
             return None
-
-        _track(serp, final)
 
         # Final cost card
         total_inr = _calc_cost(litellm_model, tok["in"], tok["out"])

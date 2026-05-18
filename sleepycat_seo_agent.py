@@ -344,37 +344,57 @@ class Orchestrator:
             return "", ""
         except: return "", ""
 
-    def run(self, keyword, checkpoint=None):
-        """Full quality pass with per-agent memory injection. Pass checkpoint to skip completed stages."""
+    def run(self, keyword, checkpoint=None, progress_callback=None):
+        """Full quality pass with per-agent memory injection. Pass checkpoint to skip completed stages.
+
+        progress_callback(agent, status, ctx, out) is called before ("running") and after ("done")
+        each agent so the UI can highlight the active agent and accumulate token estimates.
+        """
         start = time.time()
         print(f"\n🚀 Pipeline Start: {keyword}")
         cp = checkpoint or {}
+
+        def _cb(agent, status, ctx="", out=""):
+            if progress_callback:
+                progress_callback(agent, status, ctx, out)
 
         serp = cp.get("serp") or self.serp_agent.execute_task(keyword)
 
         if not cp.get("brief"):
             pos, neg = self._load_memory("strategist")
+            ctx = f"TARGET: {keyword}\nSERP: {serp}\n\nPRODUCT DB:\n{json.dumps(self.compact_products, indent=1)}"
+            _cb("strategist", "running", ctx, "")
             brief = self.strategist.execute_task(f"TARGET: {keyword}\nSERP: {serp}", neg=neg, pos=pos)
             if _is_error(brief): return brief, round(time.time() - start, 1)
+            _cb("strategist", "done", ctx, brief)
         else:
             brief = cp["brief"]
 
         if not cp.get("draft"):
             pos, neg = self._load_memory("drafter")
+            ctx = f"STRATEGY BRIEF:\n{brief}\n\nPRODUCT DB:\n{json.dumps(self.drafter_products, indent=1)}"
+            _cb("drafter", "running", ctx, "")
             draft = self.drafter.execute_task(brief, self.drafter_products, neg=neg, pos=pos)
             if _is_error(draft): return draft, round(time.time() - start, 1)
+            _cb("drafter", "done", ctx, draft)
         else:
             draft = cp["draft"]
 
         if not cp.get("opt"):
             pos, neg = self._load_memory("seo_architect")
+            ctx = f"TARGET: {keyword}\n\nPRODUCT DB:\n{json.dumps(self.seo_arch_products, indent=1)}\n\nDRAFT:\n{draft}"
+            _cb("seo_architect", "running", ctx, "")
             opt = self.seo_editor.execute_task(draft, keyword, self.seo_arch_products, neg=neg, pos=pos)
             if _is_error(opt): return opt, round(time.time() - start, 1)
+            _cb("seo_architect", "done", ctx, opt)
         else:
             opt = cp["opt"]
 
         pos, neg = self._load_memory("humanizer")
+        _cb("humanizer", "running", opt, "")
         final = self.humanizer.execute_task(opt, negative_constraints=neg, positive_examples=pos)
+        if _is_error(final): return final, round(time.time() - start, 1)
+        _cb("humanizer", "done", opt, final)
 
         dur = round(time.time() - start, 1)
         return final, dur
