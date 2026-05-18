@@ -77,21 +77,29 @@ if not st.session_state["user_email"]:
 with st.sidebar:
     st.header(f"👤 {st.session_state['user_email']}")
     st.markdown("---")
-    comp_k = os.environ.get("COMPANY_CLAUDE_KEY")
+    comp_k = st.secrets.get("COMPANY_CLAUDE_KEY") or os.environ.get("COMPANY_CLAUDE_KEY")
     if comp_k: st.success("🏢 Company Claude: LIVE")
 
     st.header("🔑 Keys")
-    g_key = st.text_input("Gemini", type="password", value=st.session_state.get("GEMINI_KEY", ""))
-    c_key = st.text_input("Claude", type="password", value=st.session_state.get("CLAUDE_KEY", ""))
+    g_key   = st.text_input("Gemini",  type="password", value=st.session_state.get("GEMINI_KEY", ""))
+    c_key   = st.text_input("Claude",  type="password", value=st.session_state.get("CLAUDE_KEY", ""))
+    oai_key = st.text_input("OpenAI",  type="password", value=st.session_state.get("OPENAI_KEY", ""))
+    kimi_key= st.text_input("Kimi",    type="password", value=st.session_state.get("KIMI_KEY", ""))
 
     models = []
-    if comp_k: models.append("anthropic/claude-3-5-sonnet-latest (Company)")
+    if comp_k: models.append("anthropic/claude-3-5-sonnet-20241022 (Company)")
     if g_key:
         st.session_state["GEMINI_KEY"] = g_key
         models.extend(["gemini/gemini-2.5-flash", "gemini/gemini-2.5-pro"])
     if c_key:
         st.session_state["CLAUDE_KEY"] = c_key
-        models.append("anthropic/claude-3-5-sonnet-latest")
+        models.append("anthropic/claude-3-5-sonnet-20241022")
+    if oai_key:
+        st.session_state["OPENAI_KEY"] = oai_key
+        models.extend(["gpt-4o", "gpt-4o-mini"])
+    if kimi_key:
+        st.session_state["KIMI_KEY"] = kimi_key
+        models.extend(["moonshot/moonshot-v1-8k", "moonshot/moonshot-v1-128k"])
 
     if st.button("Logout"):
         st.session_state["user_email"] = None
@@ -101,11 +109,15 @@ with st.sidebar:
 def run_pipeline(kw, model_choice):
     from sleepycat_seo_agent import Orchestrator
     if "(Company)" in model_choice:
-        os.environ["ANTHROPIC_API_KEY"] = os.environ.get("COMPANY_CLAUDE_KEY", "")
+        os.environ["ANTHROPIC_API_KEY"] = st.secrets.get("COMPANY_CLAUDE_KEY") or os.environ.get("COMPANY_CLAUDE_KEY", "")
     elif st.session_state.get("CLAUDE_KEY"):
         os.environ["ANTHROPIC_API_KEY"] = st.session_state["CLAUDE_KEY"]
     if st.session_state.get("GEMINI_KEY"):
         os.environ["GEMINI_API_KEY"] = st.session_state["GEMINI_KEY"]
+    if st.session_state.get("OPENAI_KEY"):
+        os.environ["OPENAI_API_KEY"] = st.session_state["OPENAI_KEY"]
+    if st.session_state.get("KIMI_KEY"):
+        os.environ["MOONSHOT_API_KEY"] = st.session_state["KIMI_KEY"]
 
     engine = Orchestrator(model=model_choice.split(" (")[0])
     with st.status("Engine running...", expanded=True) as s:
