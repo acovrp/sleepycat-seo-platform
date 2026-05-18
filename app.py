@@ -24,16 +24,16 @@ VAULT_PATH = os.path.join(BASE_PATH, "outputs")
 if not os.path.exists(VAULT_PATH):
     os.makedirs(VAULT_PATH)
 
-# --- Real Google OAuth (Root v5.5) ---
+# --- Real Google OAuth (Root v5.6) ---
 CLIENT_ID = "160422986634-5gpernee6sn90rtng8uqphrc7rris4t4.apps.googleusercontent.com"
 CLIENT_SECRET = st.secrets.get("GOOGLE_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRET")
-REDIRECT_URI = "https://sleepycat-seo1.streamlit.app"
+REDIRECT_URI = "https://sleepycat-seo1.streamlit.app/" # Trailing slash added
 
 if 'user_email' not in st.session_state:
     st.session_state['user_email'] = None
 
 def login_ui():
-    st.title("🐈 SleepyCat SEO Engine (v5.5)")
+    st.title("🐈 SleepyCat SEO Engine (v5.6)")
     st.subheader("Enterprise Login Required")
     st.info("Authorized access for @sleepycat.in domains only.")
     
@@ -46,7 +46,7 @@ def login_ui():
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
-        "scope": "email profile",
+        "scope": "openid email profile", # openid restored
         "prompt": "select_account",
         "hd": "sleepycat.in",
         "access_type": "online"
@@ -62,7 +62,15 @@ def login_ui():
     ''', unsafe_allow_html=True)
 
     st.markdown("---")
-    st.caption("Build Verification: **v5.4-STRICT-OAUTH**")
+    with st.expander("🛠️ FIX THE 403 ERROR (Admin Only)"):
+        st.write("Google is blocking the app because the 'Redirect URI' doesn't match.")
+        st.write("1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials).")
+        st.write("2. Click on your OAuth 2.0 Client ID.")
+        st.write("3. Under **Authorized redirect URIs**, copy and paste this exactly:")
+        st.code(REDIRECT_URI)
+        st.write("4. **Save** and wait 60 seconds. Then try logging in again.")
+
+    st.caption("Build Verification: **v5.6-URI-FIX**")
     st.caption(f"Server Time: {datetime.now().strftime('%H:%M:%S UTC')}")
 
     # Handle Callback
