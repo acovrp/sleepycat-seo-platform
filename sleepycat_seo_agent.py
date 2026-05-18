@@ -295,9 +295,16 @@ class Orchestrator:
 
 if __name__ == "__main__":
     # For local CLI testing
-    target = input("Enter target SEO keyword: ")
-    if not target:
-        target = "Best mattress for back pain in India"
-    
-    orchestrator = Orchestrator()
-    orchestrator.run(target)
+    try:
+        # Check if running in a terminal (not a background cloud process)
+        if os.isatty(0):
+            target = input("Enter target SEO keyword: ")
+            if not target:
+                target = "Best mattress for back pain in India"
+            
+            orchestrator = Orchestrator()
+            orchestrator.run(target)
+        else:
+            print("Non-interactive environment detected. Skipping CLI input.")
+    except Exception as e:
+        print(f"CLI Mode skipped: {e}")
