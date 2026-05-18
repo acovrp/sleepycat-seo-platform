@@ -27,10 +27,13 @@ The system utilizes a sequential hand-off model:
 ---
 
 ## 4. File Map & Environment
--   `brand_guidelines.txt`: Core brand DNA.
--   `product_catalog.json`: Verified spec source for 69 products.
--   `humanizer_rules.txt`: Voice/Tone constraints for the final pass.
--   `outputs/`: Folder for auto-archived markdown files.
+- `brand_guidelines.txt`: Core brand DNA.
+- `sleepycat-products.json`: Verified spec source for 69 products (Production DB).
+- `sleepycat-tech-glossary.md`: Proprietary tech definitions.
+- `sleepycat-context.md`: High-level history and strategy deep-dive.
+- `humanizer_rules.txt`: Voice/Tone constraints for the final pass.
+- `outputs/`: Folder for auto-archived markdown files.
+
 
 ---
 

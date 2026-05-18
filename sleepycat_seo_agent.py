@@ -153,7 +153,7 @@ class Orchestrator:
         dna = self._read(os.path.join(self.base_path, "brand_guidelines.txt"))
         tech = self._read(os.path.join(self.base_path, "sleepycat-tech-glossary.md"))
         rules = self._read(os.path.join(self.base_path, "humanizer_rules.txt"))
-        raw = self._json(os.path.join(self.base_path, "product_catalog.json"))
+        raw = self._json(os.path.join(self.base_path, "sleepycat-products.json"))
 
         self.products = [{"name": k, **v} for k, v in raw.items()] if isinstance(raw, dict) else raw
 
