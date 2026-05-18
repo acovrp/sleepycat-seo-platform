@@ -53,16 +53,25 @@ with st.sidebar:
     
     gemini_key = st.text_input("Gemini API Key", type="password", value=st.session_state.get('GEMINI_KEY', ""))
     claude_key = st.text_input("Claude API Key (Optional)", type="password", value=st.session_state.get('CLAUDE_KEY', ""))
+    openai_key = st.text_input("OpenAI API Key (Optional)", type="password", value=st.session_state.get('OPENAI_KEY', ""))
     
+    connected_models = []
     if gemini_key:
         st.session_state['GEMINI_KEY'] = gemini_key
         st.success("Gemini: Connected ✅")
+        connected_models.extend(["gemini/gemini-1.5-flash", "gemini/gemini-1.5-pro"])
     else:
         st.warning("Gemini: Disconnected ❌")
         
     if claude_key:
         st.session_state['CLAUDE_KEY'] = claude_key
         st.info("Claude: Connected ✅")
+        connected_models.append("anthropic/claude-3-5-sonnet-20240620")
+        
+    if openai_key:
+        st.session_state['OPENAI_KEY'] = openai_key
+        st.success("OpenAI: Connected ✅")
+        connected_models.append("openai/gpt-4o")
 
     st.markdown("---")
     if st.button("Logout"):
@@ -88,6 +97,8 @@ def get_orchestrator(model):
             os.environ['GEMINI_API_KEY'] = st.session_state['GEMINI_KEY']
         if st.session_state.get('CLAUDE_KEY'):
             os.environ['ANTHROPIC_API_KEY'] = st.session_state['CLAUDE_KEY']
+        if st.session_state.get('OPENAI_KEY'):
+            os.environ['OPENAI_API_KEY'] = st.session_state['OPENAI_KEY']
             
         return Orchestrator(model=model)
     except Exception as e:
@@ -119,18 +130,22 @@ with tab1:
     with col1:
         st.subheader("New Article")
         keyword = st.text_input("Target Keyword", placeholder="e.g., Best memory foam mattress for back pain")
-        model_choice = st.selectbox("Select Engine", ["gemini/gemini-1.5-flash", "gemini/gemini-1.5-pro", "anthropic/claude-3-5-sonnet", "openai/gpt-4o"])
+        
+        # Filter available engines based on keys
+        display_models = connected_models if connected_models else ["No API Keys Found"]
+        model_choice = st.selectbox("Select Engine", display_models)
+        
         generate_btn = st.button("Generate Blog Post", type="primary")
 
     with col2:
         st.subheader("Active Data")
         st.info("✓ 69 Product Database\n✓ Brand Final Formula\n✓ Live SERP Scraping")
-        if not st.session_state.get('GEMINI_KEY'):
-            st.error("⚠️ ACTION REQUIRED: Add your Gemini API Key in the sidebar profile.")
+        if not connected_models:
+            st.error("⚠️ ACTION REQUIRED: Add an API Key in the sidebar profile.")
 
     if generate_btn and keyword:
-        if not st.session_state.get('GEMINI_KEY'):
-            st.error("Cannot proceed: No API key for the current session.")
+        if not connected_models or model_choice == "No API Keys Found":
+            st.error("Cannot proceed: No valid API key found for this session.")
         else:
             orchestrator = get_orchestrator(model=model_choice)
             if orchestrator:
