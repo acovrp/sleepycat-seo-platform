@@ -1,0 +1,7 @@
+streamlit
+litellm
+requests
+beautifulsoup4
+googlesearch-python
+google-genai
+python-dotenv
