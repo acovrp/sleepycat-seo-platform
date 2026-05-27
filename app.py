@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import json
+import base64
 import urllib.parse
 import requests
 import time
@@ -56,6 +57,47 @@ HISTORY_PATH = os.path.join(BASE_PATH, "generation_history.json")
 VAULT_PATH = os.path.join(BASE_PATH, "outputs")
 MEMORY_PATH = os.path.join(BASE_PATH, "agent_memory.json")
 if not os.path.exists(VAULT_PATH): os.makedirs(VAULT_PATH)
+
+GITHUB_REPO   = "acovrp/sleepycat-seo-platform"
+GITHUB_BRANCH = "master"
+
+def _gh_token():
+    return st.secrets.get("GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN", "")
+
+def _gh_read(gh_path):
+    """Read a JSON file from GitHub. Returns (data, sha) or (None, None)."""
+    token = _gh_token()
+    if not token:
+        return None, None
+    r = requests.get(
+        f"https://api.github.com/repos/{GITHUB_REPO}/contents/{gh_path}",
+        headers={"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"},
+        params={"ref": GITHUB_BRANCH},
+    )
+    if r.status_code == 200:
+        d = r.json()
+        try:
+            text = base64.b64decode(d["content"]).decode("utf-8")
+            return json.loads(text), d["sha"]
+        except:
+            return None, d.get("sha")
+    return None, None
+
+def _gh_write(gh_path, data, sha, message="SEO platform update"):
+    """Write JSON data to GitHub. sha=None creates new file. Returns True on success."""
+    token = _gh_token()
+    if not token:
+        return False
+    content = base64.b64encode(json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")).decode("utf-8")
+    payload = {"message": message, "content": content, "branch": GITHUB_BRANCH}
+    if sha:
+        payload["sha"] = sha
+    r = requests.put(
+        f"https://api.github.com/repos/{GITHUB_REPO}/contents/{gh_path}",
+        headers={"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"},
+        json=payload,
+    )
+    return r.status_code in (200, 201)
 
 # --- Canonical Auth (Strict v6.1) ---
 CLIENT_ID = "160422986634-5gpernee6sn90rtng8uqphrc7rris4t4.apps.googleusercontent.com"
@@ -160,6 +202,20 @@ def save_to_vault(keyword, content):
     file_path = os.path.join(VAULT_PATH, safe_filename)
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(content)
+    # Push to GitHub vault
+    token = _gh_token()
+    if token:
+        gh_path = f"outputs/{safe_filename}"
+        _, existing_sha = _gh_read(gh_path)
+        encoded = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+        payload = {"message": f"Vault: {keyword}", "content": encoded, "branch": GITHUB_BRANCH}
+        if existing_sha:
+            payload["sha"] = existing_sha
+        requests.put(
+            f"https://api.github.com/repos/{GITHUB_REPO}/contents/{gh_path}",
+            headers={"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"},
+            json=payload,
+        )
     return safe_filename
 
 def _stream_agent(label, stream_gen):
@@ -280,31 +336,47 @@ def run_pipeline(kw, model_choice, resume=False, special_instructions=""):
         return final
 
 def log_generation(kw, user, content, filename):
-    hist = []
-    try:
-        if os.path.exists(HISTORY_PATH):
-            with open(HISTORY_PATH, "r") as f: hist = json.load(f)
-        hist.append({
-            "id": len(hist) + 1,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "user": user,
-            "keyword": kw,
-            "content": content,
-            "filename": filename,
-            "status": "Pending Review"
-        })
-        with open(HISTORY_PATH, "w") as f: json.dump(hist, f, indent=2)
-    except: pass
+    hist, sha = _gh_read("generation_history.json")
+    if hist is None:
+        # Fallback to local file (local dev)
+        hist = []
+        try:
+            if os.path.exists(HISTORY_PATH):
+                with open(HISTORY_PATH, "r") as f: hist = json.load(f)
+        except: pass
+    hist.append({
+        "id": len(hist) + 1,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "user": user,
+        "keyword": kw,
+        "content": content,
+        "filename": filename,
+        "status": "Pending Review"
+    })
+    ok = _gh_write("generation_history.json", hist, sha, f"History: {kw}")
+    if not ok:
+        try:
+            with open(HISTORY_PATH, "w") as f: json.dump(hist, f, indent=2)
+        except: pass
 
 def update_feedback(gen_id, feedback, status):
-    if os.path.exists(HISTORY_PATH):
-        with open(HISTORY_PATH, "r") as f: hist = json.load(f)
+    hist, sha = _gh_read("generation_history.json")
+    if hist is None:
+        try:
+            if os.path.exists(HISTORY_PATH):
+                with open(HISTORY_PATH, "r") as f: hist = json.load(f)
+        except: pass
+    if hist:
         for i in hist:
             if i.get('id') == gen_id:
                 i['feedback'] = feedback
                 i['status'] = status
                 break
-        with open(HISTORY_PATH, "w") as f: json.dump(hist, f, indent=2)
+        ok = _gh_write("generation_history.json", hist, sha, f"Feedback: {gen_id}")
+        if not ok:
+            try:
+                with open(HISTORY_PATH, "w") as f: json.dump(hist, f, indent=2)
+            except: pass
 
 ROUTING_OPTIONS = {
     "all":          "🌐 All Agents",
@@ -315,11 +387,13 @@ ROUTING_OPTIONS = {
 }
 
 def write_memory(keyword, feedback_text, memory_type, target="all"):
-    mem = []
-    try:
-        if os.path.exists(MEMORY_PATH):
-            with open(MEMORY_PATH, "r") as f: mem = json.load(f)
-    except: pass
+    mem, sha = _gh_read("agent_memory.json")
+    if mem is None:
+        mem = []
+        try:
+            if os.path.exists(MEMORY_PATH):
+                with open(MEMORY_PATH, "r") as f: mem = json.load(f)
+        except: pass
     mem.append({
         "type": memory_type,
         "target": target,
@@ -327,7 +401,11 @@ def write_memory(keyword, feedback_text, memory_type, target="all"):
         "keyword": keyword,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
     })
-    with open(MEMORY_PATH, "w") as f: json.dump(mem, f, indent=2)
+    ok = _gh_write("agent_memory.json", mem, sha, f"Memory: {keyword}")
+    if not ok:
+        try:
+            with open(MEMORY_PATH, "w") as f: json.dump(mem, f, indent=2)
+        except: pass
 
 # --- Tabs ---
 t1, t2, t3 = st.tabs(["🚀 Generator", "📜 History", "🛠️ Admin"])
@@ -389,39 +467,49 @@ with t1:
 
 with t2:
     st.subheader("Recent Generations")
-    if os.path.exists(HISTORY_PATH):
+    hist, _ = _gh_read("generation_history.json")
+    if hist is None and os.path.exists(HISTORY_PATH):
         try:
-            with open(HISTORY_PATH, "r") as f:
-                hist = json.load(f)
-                for i in hist[::-1]:
-                    with st.expander(f"[{i.get('timestamp')}] {i.get('keyword')} (by {i.get('user')})"):
-                        st.markdown(i.get('content', '*No content archived.*'))
-                        st.markdown("---")
-                        st.write(f"**Status:** {i.get('status', 'Legacy')}")
-                        if i.get('feedback'): st.info(f"**Feedback:** {i['feedback']}")
-                        
-                        iid = i.get('id')
-                        status_val = i.get('status', 'Pending Review')
-                        if iid and status_val == "Pending Review":
-                            f1, f2 = st.columns(2)
-                            with f1:
-                                if st.button("👍 Approve", key=f"acc_{iid}"):
-                                    update_feedback(iid, "Verified Quality", "Approved")
-                                    st.rerun()
-                            with f2:
-                                if st.button("👎 Give Feedback", key=f"rej_{iid}"):
-                                    st.session_state[f"fb_mode_{iid}"] = True
-                            if st.session_state.get(f"fb_mode_{iid}", False):
-                                good = st.text_area("What was good? (optional)", key=f"good_{iid}")
-                                bad  = st.text_area("What was bad? (optional)",  key=f"bad_{iid}")
-                                if st.button("Submit Feedback", key=f"sub_{iid}"):
-                                    kw = i.get('keyword', '')
-                                    if good.strip(): write_memory(kw, good.strip(), "positive")
-                                    if bad.strip():  write_memory(kw, bad.strip(),  "negative")
-                                    update_feedback(iid, (good + " | " + bad).strip(" |"), "Reviewed")
-                                    st.session_state[f"fb_mode_{iid}"] = False
-                                    st.rerun()
+            with open(HISTORY_PATH, "r") as f: hist = json.load(f)
+        except: hist = None
+    if hist:
+        try:
+            for i in hist[::-1]:
+                with st.expander(f"[{i.get('timestamp')}] {i.get('keyword')} (by {i.get('user')})"):
+                    st.markdown(i.get('content', '*No content archived.*'))
+                    st.markdown("---")
+                    st.write(f"**Status:** {i.get('status', 'Legacy')}")
+                    if i.get('feedback'): st.info(f"**Feedback:** {i['feedback']}")
+
+                    iid = i.get('id')
+                    status_val = i.get('status', 'Pending Review')
+                    if iid and status_val == "Pending Review":
+                        f1, f2 = st.columns(2)
+                        with f1:
+                            if st.button("👍 Approve", key=f"acc_{iid}"):
+                                update_feedback(iid, "Verified Quality", "Approved")
+                                st.rerun()
+                        with f2:
+                            if st.button("👎 Give Feedback", key=f"rej_{iid}"):
+                                st.session_state[f"fb_mode_{iid}"] = True
+                        if st.session_state.get(f"fb_mode_{iid}", False):
+                            good = st.text_area("What was good? (optional)", key=f"good_{iid}")
+                            bad  = st.text_area("What was bad? (optional)",  key=f"bad_{iid}")
+                            if st.button("Submit Feedback", key=f"sub_{iid}"):
+                                kw = i.get('keyword', '')
+                                if good.strip(): write_memory(kw, good.strip(), "positive")
+                                if bad.strip():  write_memory(kw, bad.strip(),  "negative")
+                                update_feedback(iid, (good + " | " + bad).strip(" |"), "Reviewed")
+                                st.session_state[f"fb_mode_{iid}"] = False
+                                st.rerun()
         except: st.error("History load error.")
+    elif hist is None:
+        if not _gh_token():
+            st.warning("GITHUB_TOKEN not set in Streamlit Secrets — history won't persist across redeploys.")
+        else:
+            st.info("No generations yet.")
+    else:
+        st.info("No generations yet.")
 
 with t3:
     st.subheader("Platform Administration")
@@ -429,24 +517,24 @@ with t3:
     if admin_code == "SleepyCat2026":
         st.success("Admin mode unlocked.")
         
-        if st.button("🚀 Sync to GitHub Cloud Vault"):
-            try:
-                subprocess.run(["git", "config", "user.email", "admin@sleepycat.in"], check=True)
-                subprocess.run(["git", "config", "user.name", "SleepyCat Admin"], check=True)
-                subprocess.run(["git", "add", "outputs/*"], check=True)
-                subprocess.run(["git", "add", "*.json"], check=True)
-                subprocess.run(["git", "commit", "-m", f"Vault Sync: {datetime.now().strftime('%Y-%m-%d %H:%M')}"], check=True)
-                subprocess.run(["git", "push", "origin", "master"], check=True)
-                st.success("Successfully synced all articles to GitHub 100GB Vault!")
-            except Exception as e: st.error(f"Sync Failed: {e}")
+        gh_ok = bool(_gh_token())
+        if gh_ok:
+            st.success("✅ GitHub API persistence active — history auto-saves on every generation.")
+        else:
+            st.error("⚠️ GITHUB_TOKEN not in Streamlit Secrets. History won't persist across redeploys.")
             
         # ── Memory Browser ──────────────────────────────────────────
         st.markdown("---")
         st.subheader("🧠 Agent Memory Browser")
         st.caption("Change routing to limit which agent a memory is injected into. Delete removes it permanently.")
-        if os.path.exists(MEMORY_PATH):
+        mem_entries, mem_sha = _gh_read("agent_memory.json")
+        if mem_entries is None and os.path.exists(MEMORY_PATH):
             try:
                 with open(MEMORY_PATH, "r") as f: mem_entries = json.load(f)
+                mem_sha = None
+            except: pass
+        if mem_entries is not None:
+            try:
                 if mem_entries:
                     pos_entries  = [(i, e) for i, e in enumerate(mem_entries) if e.get("type") == "positive"]
                     neg_entries  = [(i, e) for i, e in enumerate(mem_entries) if e.get("type") == "negative"]
@@ -469,12 +557,12 @@ with t3:
                                 if new_target != cur_target:
                                     if st.button("💾 Save routing", key=f"save_route_{key_suffix}_{real_idx}"):
                                         mem_entries[real_idx]["target"] = new_target
-                                        with open(MEMORY_PATH, "w") as f: json.dump(mem_entries, f, indent=2)
+                                        _gh_write("agent_memory.json", mem_entries, mem_sha, "Memory routing update")
                                         st.rerun()
                             with r2:
                                 if st.button("🗑️", key=f"del_mem_{key_suffix}_{real_idx}", help="Delete"):
                                     mem_entries.pop(real_idx)
-                                    with open(MEMORY_PATH, "w") as f: json.dump(mem_entries, f, indent=2)
+                                    _gh_write("agent_memory.json", mem_entries, mem_sha, "Memory delete")
                                     st.rerun()
 
                     with col_pos:
@@ -495,23 +583,25 @@ with t3:
         # ── History Management ───────────────────────────────────────
         st.markdown("---")
         st.subheader("🗂️ History Management")
-        if os.path.exists(HISTORY_PATH):
+        hist_all, hist_sha = _gh_read("generation_history.json")
+        if hist_all is None and os.path.exists(HISTORY_PATH):
             try:
                 with open(HISTORY_PATH, "r") as f: hist_all = json.load(f)
-                if hist_all:
-                    for entry in reversed(hist_all):
-                        eid = entry.get("id")
-                        h1, h2 = st.columns([6, 1])
-                        with h1:
-                            status_icon = {"Approved": "✅", "Reviewed": "💬", "Pending Review": "⏳"}.get(entry.get("status"), "—")
-                            st.write(f"{status_icon} `{entry.get('timestamp')}` — **{entry.get('keyword')}** · {entry.get('user')}")
-                        with h2:
-                            if st.button("🗑️", key=f"del_hist_{eid}", help="Delete this entry"):
-                                hist_all = [e for e in hist_all if e.get("id") != eid]
-                                with open(HISTORY_PATH, "w") as f: json.dump(hist_all, f, indent=2)
-                                st.rerun()
-                else:
-                    st.info("No history entries.")
+                hist_sha = None
+            except: pass
+        if hist_all:
+            try:
+                for entry in reversed(hist_all):
+                    eid = entry.get("id")
+                    h1, h2 = st.columns([6, 1])
+                    with h1:
+                        status_icon = {"Approved": "✅", "Reviewed": "💬", "Pending Review": "⏳"}.get(entry.get("status"), "—")
+                        st.write(f"{status_icon} `{entry.get('timestamp')}` — **{entry.get('keyword')}** · {entry.get('user')}")
+                    with h2:
+                        if st.button("🗑️", key=f"del_hist_{eid}", help="Delete this entry"):
+                            hist_all = [e for e in hist_all if e.get("id") != eid]
+                            _gh_write("generation_history.json", hist_all, hist_sha, f"Delete history {eid}")
+                            st.rerun()
             except Exception as e:
                 st.error(f"History load error: {e}")
         else:
